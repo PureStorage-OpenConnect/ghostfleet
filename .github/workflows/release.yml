@@ -1,0 +1,56 @@
+# On every version tag: build the three container images, push them to GHCR
+# (ghcr.io/<owner>/ghostfleet/{controller,netboot,tempos}), and create a
+# GitHub release carrying the install assets (pull-only compose file,
+# env.example, preflight.sh) so a controller VM never needs a source
+# checkout. docs/INSTALL.md documents the consumer side.
+#
+# The packages are linked to this repository; their visibility must be public
+# for the pull-only stack to work without a registry login.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release
+      packages: write # push to GHCR
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push images
+        run: |
+          set -eu
+          VERSION="${GITHUB_REF_NAME}"
+          PREFIX="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ghostfleet"
+          for img in controller netboot tempos; do
+            docker build -f "deploy/Dockerfile.${img}" \
+              --build-arg VERSION="${VERSION}" \
+              -t "${PREFIX}/${img}:${VERSION}" \
+              -t "${PREFIX}/${img}:latest" .
+            docker push "${PREFIX}/${img}:${VERSION}"
+            docker push "${PREFIX}/${img}:latest"
+          done
+
+      - name: Create release with install assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          cp deploy/docker-compose.dist.yml docker-compose.yml
+          cp deploy/env.example env.example
+          cp deploy/preflight.sh preflight.sh
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "GhostFleet ${GITHUB_REF_NAME}" \
+            --generate-notes \
+            docker-compose.yml env.example preflight.sh

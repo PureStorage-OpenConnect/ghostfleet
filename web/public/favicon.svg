@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <rect width="128" height="128" rx="30" fill="#0b1018" />
+  <g fill="none" stroke="#2ec5e6" stroke-width="2" stroke-linecap="round" stroke-dasharray="3 4">
+    <path d="M33 70 L33 50 L51 50" />
+    <path d="M95 70 L95 50 L77 50" />
+  </g>
+  <g>
+    <path d="M22 86 L22 110 A42 10 0 0 0 106 110 L106 86 Z" fill="#2ec5e6" />
+    <ellipse cx="64" cy="86" rx="42" ry="10" fill="#2ec5e6" />
+    <path d="M22 86 A42 10 0 0 0 106 86" fill="none" stroke="#0b1018" stroke-width="2.5" />
+    <path d="M22 97 A42 10 0 0 0 106 97" fill="none" stroke="#0b1018" stroke-width="2.5" />
+    <path d="M22 108 A42 10 0 0 0 106 108" fill="none" stroke="#0b1018" stroke-width="2.5" />
+  </g>
+  <path d="M46 44 L46 38 L54 24 L74 24 L82 38 L82 68 L77 80 L70 70 L64 82 L58 70 L51 80 L46 68 Z" fill="#2ec5e6" />
+  <polygon points="51,45 60,48 60,52 51,50" fill="#0b1018" />
+  <polygon points="77,45 68,48 68,52 77,50" fill="#0b1018" />
+  <g stroke="#0b1018" stroke-width="1.5" stroke-linejoin="round">
+    <polygon points="64,79 72.7,84 72.7,94 64,99 55.3,94 55.3,84" fill="#2ec5e6" />
+    <path d="M64 79 L64 89 M64 89 L72.7 94 M64 89 L55.3 94" fill="none" />
+    <polygon points="33,65 41.7,70 41.7,80 33,85 24.3,80 24.3,70" fill="#2ec5e6" />
+    <path d="M33 65 L33 75 M33 75 L41.7 80 M33 75 L24.3 80" fill="none" />
+    <polygon points="95,65 103.7,70 103.7,80 95,85 86.3,80 86.3,70" fill="#2ec5e6" />
+    <path d="M95 65 L95 75 M95 75 L103.7 80 M95 75 L86.3 80" fill="none" />
+  </g>
+</svg>

@@ -1,0 +1,29 @@
+# Build artifacts
+/bin/
+/web/dist/
+/web/node_modules/
+
+# Go
+*.test
+*.out
+coverage.html
+
+# Local state / secrets
+*.db
+*.sqlite
+.env
+.env.*
+
+# Temp-OS image build outputs
+/images/out/
+
+# Editor / OS noise
+.DS_Store
+.idea/
+.vscode/
+*.swp
+/data/
+
+# Stray local binaries
+/agent
+/controller

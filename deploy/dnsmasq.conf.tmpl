@@ -1,0 +1,24 @@
+# GhostFleet netboot dnsmasq configuration (isolated IPv6-only network).
+# Rendered by netboot-entrypoint.sh; __IFACE__ is replaced with the
+# isolated interface name.
+
+# DHCP/RA/TFTP only — no DNS.
+port=0
+
+interface=__IFACE__
+bind-interfaces
+
+# Router advertisements: announce fd47:486f:7374::/64 with SLAAC (the temp
+# OS autoconfigures without a DHCPv6 client) AND stateful DHCPv6 (the UEFI
+# firmware requires a DHCPv6 exchange to receive the boot file URL).
+enable-ra
+dhcp-range=fd47:486f:7374::1000,fd47:486f:7374::1fff,slaac,12h
+
+# UEFI IPv6 PXE: hand the firmware our iPXE binary via TFTP.
+dhcp-option=option6:bootfile-url,tftp://[fd47:486f:7374::1]/snponly.efi
+
+enable-tftp
+tftp-root=/tftp
+
+log-dhcp
+log-facility=-

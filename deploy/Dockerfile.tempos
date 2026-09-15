@@ -1,0 +1,56 @@
+# Builds the GhostFleet temp OS boot artifacts: an Alpine virt kernel and an
+# initramfs (a small Alpine rootfs) that brings up eth0 (IPv6 SLAAC), then
+# runs the agent — which makes XFS filesystems and drives fio to generate
+# data. The resulting image copies /artifacts into the compose "images"
+# volume served by the controller's /boot endpoints.
+
+# Agent binary (static)
+FROM golang:1.26-alpine AS agent
+ARG VERSION=dev
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY cmd/ cmd/
+COPY internal/ internal/
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -ldflags "-X github.com/PureStorage-OpenConnect/ghostfleet/internal/buildinfo.Version=${VERSION}" \
+    -o /agent ./cmd/agent
+
+# Kernel + initramfs assembly
+FROM alpine:3.22 AS build
+RUN apk add --no-cache linux-virt kmod cpio
+COPY deploy/tempos-init.sh /tmp/init
+COPY --from=agent /agent /tmp/agent
+
+RUN set -e; \
+    KVER=$(basename /lib/modules/*); \
+    ROOT=/initramfs; \
+    # A minimal Alpine rootfs: shell + tools (busybox), fio, and mkfs.xfs.
+    # Seed the target's apk config (repos + signing keys) so apk --root can
+    # fetch the package index into the fresh root.
+    mkdir -p $ROOT/etc/apk/keys; \
+    cp /etc/apk/repositories $ROOT/etc/apk/repositories; \
+    cp /etc/apk/keys/* $ROOT/etc/apk/keys/; \
+    apk add --root $ROOT --initdb --no-cache \
+        alpine-baselayout busybox musl fio xfsprogs util-linux; \
+    # The init script (PID 1) and the agent.
+    install -m 755 /tmp/init $ROOT/init; \
+    install -m 755 /tmp/agent $ROOT/agent; \
+    mkdir -p $ROOT/proc $ROOT/sys $ROOT/dev $ROOT/mnt; \
+    # Kernel modules: VMware NIC + SCSI, the disk class, and XFS (+ crc deps).
+    for mod in vmxnet3 vmw_pvscsi sd_mod xfs crc32c_generic crc32c-intel libcrc32c; do \
+      find /lib/modules/$KVER -name "$mod.ko*" -exec install -D {} $ROOT{} \; ; \
+    done; \
+    cp /lib/modules/$KVER/modules.order   $ROOT/lib/modules/$KVER/ 2>/dev/null || true; \
+    cp /lib/modules/$KVER/modules.builtin $ROOT/lib/modules/$KVER/; \
+    cp /lib/modules/$KVER/modules.builtin.modinfo $ROOT/lib/modules/$KVER/ 2>/dev/null || true; \
+    depmod -b $ROOT $KVER; \
+    mkdir /artifacts; \
+    (cd $ROOT && find . | cpio -o -H newc | gzip -9 > /artifacts/initramfs.gz); \
+    cp /boot/vmlinuz-virt /artifacts/vmlinuz; \
+    ls -lh /artifacts
+
+# Artifact carrier: copies artifacts into the mounted images volume.
+FROM alpine:3.22
+COPY --from=build /artifacts /artifacts
+CMD ["sh", "-c", "cp -v /artifacts/* /out/ && echo 'temp OS artifacts installed'"]

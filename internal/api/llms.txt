@@ -1,0 +1,11 @@
+# GhostFleet Controller
+
+> Management API of a GhostFleet controller — a calibrated synthetic data generator for virtual infrastructure (storage load, dedup/compression validation, backup testing). Profiles are versioned templates; deployments are independent instances with their own effective configuration.
+
+## API
+
+- [OpenAPI specification (YAML)](/api/v1/openapi.yaml): Complete machine-readable API description (OpenAPI 3.0). Base path for all endpoints is `/api/v1`.
+
+## Authentication
+
+When a password and/or API keys are configured, authenticate with a static API key via the `Authorization: Bearer <key>` or `X-API-Key: <key>` header (or `?apikey=<key>`), or log in via `POST /api/v1/session` to obtain a session cookie. If neither a password nor API keys are configured, all endpoints are open.

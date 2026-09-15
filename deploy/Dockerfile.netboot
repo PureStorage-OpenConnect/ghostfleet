@@ -1,0 +1,29 @@
+# Netboot service: dnsmasq (router advertisements + stateful DHCPv6 + TFTP)
+# plus an iPXE EFI binary built from source with an embedded chainload
+# script (avoids a second DHCP boot-option round and its loop-avoidance
+# complexity). Runs with host networking on the isolated interface.
+
+FROM alpine:3.22 AS ipxe
+# Accepted for build uniformity (the release workflow passes VERSION to all
+# three images); nothing here stamps it.
+ARG VERSION=dev
+RUN apk add --no-cache build-base perl xz-dev git bash coreutils
+# Pinned iPXE commit (master, 2026-06): release builds must be reproducible
+# and immune to upstream breakage. Bump deliberately.
+ARG IPXE_COMMIT=dcdba1814239cd891090fb3aea009c736987d66a
+RUN git init /ipxe \
+    && git -C /ipxe fetch --depth 1 https://github.com/ipxe/ipxe.git "${IPXE_COMMIT}" \
+    && git -C /ipxe checkout FETCH_HEAD
+COPY deploy/embed.ipxe /embed.ipxe
+RUN cd /ipxe/src \
+    && printf '#define NET_PROTO_IPV6\n#define DOWNLOAD_PROTO_HTTP\n' >> config/local/general.h \
+    && make -j"$(nproc)" bin-x86_64-efi/snponly.efi EMBED=/embed.ipxe \
+    && ls -lh bin-x86_64-efi/snponly.efi
+
+FROM alpine:3.22
+RUN apk add --no-cache dnsmasq
+COPY --from=ipxe /ipxe/src/bin-x86_64-efi/snponly.efi /tftp/snponly.efi
+COPY deploy/dnsmasq.conf.tmpl /etc/dnsmasq.conf.tmpl
+COPY deploy/netboot-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]

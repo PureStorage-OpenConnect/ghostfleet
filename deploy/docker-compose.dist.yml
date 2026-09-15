@@ -1,0 +1,58 @@
+# GhostFleet — pull-only deployment stack.
+#
+# This is the distribution counterpart of docker-compose.yml: it references
+# published images and never builds from source, so a controller VM needs
+# only this file plus a `.env` (see env.example) — no repo checkout, no
+# toolchain. Published as `docker-compose.yml` on every GitHub release;
+# docs/INSTALL.md is the step-by-step guide.
+
+services:
+  core:
+    image: ${GHOSTFLEET_IMAGE_PREFIX:-ghcr.io/purestorage-openconnect/ghostfleet}/controller:${GHOSTFLEET_VERSION:-latest}
+    restart: unless-stopped
+    ports:
+      # The controller serves the UI/API and the /boot + /agent endpoints on a
+      # single container port (8080). Publish it on the standard HTTP port for
+      # the management UI, and keep 8080 because the isolated-network boot chain
+      # targets the host ULA at :8080 — both map to the same container port.
+      - "80:8080"
+      - "8080:8080"
+    environment:
+      # Optional UI/API password (UI-1); empty = open access.
+      - GHOSTFLEET_PASSWORD=${GHOSTFLEET_PASSWORD:-}
+      # Optional static API keys for automation (comma-separated). Accepted via
+      # Authorization: Bearer / X-API-Key header, or ?apikey= (query leaks into
+      # logs — prefer a header). Configuring any also turns the API gate on.
+      - GHOSTFLEET_API_KEYS=${GHOSTFLEET_API_KEYS:-}
+      # Discovery of unknown VMs (restored ghost VMs); on by default, "off" disables.
+      - GHOSTFLEET_DISCOVERY=${GHOSTFLEET_DISCOVERY:-}
+    volumes:
+      - state:/var/lib/ghostfleet
+      - images:/var/lib/ghostfleet/images:ro
+    depends_on:
+      tempos:
+        condition: service_completed_successfully
+
+  # One-shot: installs the prebuilt temp OS artifacts (kernel + initramfs with
+  # the agent) into the images volume served by the controller's /boot.
+  tempos:
+    image: ${GHOSTFLEET_IMAGE_PREFIX:-ghcr.io/purestorage-openconnect/ghostfleet}/tempos:${GHOSTFLEET_VERSION:-latest}
+    restart: "no"
+    volumes:
+      - images:/out
+
+  # RA + DHCPv6 + TFTP on the isolated interface. Needs host networking
+  # (link-local multicast) — it binds only to GHOSTFLEET_ISOLATED_IF.
+  netboot:
+    image: ${GHOSTFLEET_IMAGE_PREFIX:-ghcr.io/purestorage-openconnect/ghostfleet}/netboot:${GHOSTFLEET_VERSION:-latest}
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    environment:
+      - GHOSTFLEET_ISOLATED_IF=${GHOSTFLEET_ISOLATED_IF:?set GHOSTFLEET_ISOLATED_IF in .env to the isolated-network interface (e.g. ens34)}
+
+volumes:
+  state:
+  images:

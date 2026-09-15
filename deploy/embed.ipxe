@@ -1,0 +1,4 @@
+#!ipxe
+echo GhostFleet netboot (embedded) — MAC ${net0/mac}
+dhcp || shell
+chain http://[fd47:486f:7374::1]:8080/boot/script.ipxe?mac=${net0/mac} || shell

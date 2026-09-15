@@ -1,0 +1,487 @@
+openapi: 3.0.3
+info:
+  title: GhostFleet Controller API
+  description: >
+    Management API of GhostFleet, a calibrated synthetic data generator for
+    virtual infrastructure (storage load, dedup/compression validation, backup
+    testing). Profiles are
+    versioned templates; deployments are independent instances with their own
+    effective configuration. When a password and/or API keys are configured,
+    authenticate via POST /session (sets a session cookie) or a static API key
+    (Authorization: Bearer, X-API-Key header, or ?apikey= query). Without any
+    of these configured, all endpoints are open.
+  version: "1.0"
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+servers:
+  - url: /api/v1
+paths:
+  /version:
+    get:
+      summary: Controller version
+      responses:
+        "200":
+          description: OK
+  /session:
+    get:
+      summary: Auth status (password required? authenticated?)
+      responses:
+        "200":
+          description: OK
+    post:
+      summary: Log in with the optional password
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                password: { type: string }
+      responses:
+        "200": { description: Authenticated, session cookie set }
+        "401": { description: Wrong password }
+    delete:
+      summary: Log out
+      responses:
+        "204": { description: Session revoked }
+
+  /connections:
+    get:
+      summary: List hypervisor connections (secrets never included)
+      responses:
+        "200": { description: OK }
+    post:
+      summary: Create a hypervisor connection
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConnectionRequest" }
+      responses:
+        "201": { description: Created }
+        "409": { description: Name already exists }
+  /connections/{id}:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      summary: Get a connection
+      responses:
+        "200": { description: OK }
+        "404": { description: Not found }
+    put:
+      summary: Update a connection (omit secret to keep the stored one)
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConnectionRequest" }
+      responses:
+        "200": { description: OK }
+    delete:
+      summary: Delete a connection (rejected while deployments use it)
+      responses:
+        "204": { description: Deleted }
+        "409": { description: In use }
+
+  /connections/{id}/validate:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    post:
+      summary: Test the connection; returns hypervisor product and version
+      responses:
+        "200": { description: "OK: {product, version}" }
+        "502": { description: Hypervisor unreachable / auth failed }
+  /connections/{id}/placement:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      summary: Enumerate placement options (datacenters, clusters, datastores, networks)
+      responses:
+        "200": { description: OK }
+        "502": { description: Hypervisor unreachable }
+
+  /profiles:
+    get:
+      summary: List profiles with their current spec
+      responses:
+        "200": { description: OK }
+    post:
+      summary: Create a profile (spec becomes version 1)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, spec]
+              properties:
+                name: { type: string }
+                spec: { $ref: "#/components/schemas/ProfileSpec" }
+      responses:
+        "201": { description: Created }
+        "409": { description: Name already exists }
+  /profiles/import:
+    post:
+      summary: Create a profile from an exported profile document
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, spec]
+              properties:
+                kind: { type: string, enum: ["ghostfleet.profile"] }
+                name: { type: string }
+                spec: { $ref: "#/components/schemas/ProfileSpec" }
+      responses:
+        "201": { description: Created }
+        "400": { description: Not a profile document or invalid spec }
+        "409": { description: Name already exists }
+  /profiles/{id}:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      summary: Get a profile (current version's spec)
+      responses:
+        "200": { description: OK }
+    put:
+      summary: Rename and/or store a new spec as the next version
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                spec: { $ref: "#/components/schemas/ProfileSpec" }
+      responses:
+        "200": { description: OK }
+    delete:
+      summary: Delete a profile (rejected while active deployments reference it)
+      responses:
+        "204": { description: Deleted }
+        "409": { description: In use }
+  /profiles/{id}/export:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      summary: Export the profile's current version as a portable JSON document
+      responses:
+        "200": { description: OK (application/json attachment) }
+  /profiles/{id}/versions:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      summary: List all immutable versions, newest first
+      responses:
+        "200": { description: OK }
+  /profiles/{id}/versions/{version}:
+    parameters:
+      - { $ref: "#/components/parameters/id" }
+      - name: version
+        in: path
+        required: true
+        schema: { type: integer }
+    get:
+      summary: Get one version snapshot
+      responses:
+        "200": { description: OK }
+
+  /deployments:
+    get:
+      summary: List deployments
+      responses:
+        "200": { description: OK }
+    post:
+      summary: >
+        Create a deployment from a profile version. The spec is snapshotted
+        into the deployment (deploy-time overrides via the spec field);
+        placement selects compute/storage on the target hypervisor.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, profileId, connectionId]
+              properties:
+                name: { type: string }
+                profileId: { type: string }
+                profileVersion: { type: integer, description: "0/omitted = current" }
+                connectionId: { type: string }
+                spec: { $ref: "#/components/schemas/ProfileSpec" }
+                placement:
+                  type: object
+                  additionalProperties: { type: string }
+      responses:
+        "201": { description: Created }
+  /deployments/{id}:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      summary: Get a deployment
+      responses:
+        "200": { description: OK }
+    delete:
+      summary: >
+        Tear down the deployment: asynchronously deletes all its VMs/disks on
+        the hypervisor, then marks it deleted. The record and run history are
+        kept. Returns 204 immediately when nothing was deployed.
+      responses:
+        "202": { description: Teardown run started }
+        "204": { description: Nothing deployed; marked deleted }
+        "409": { description: Already deleted or a job is running }
+  /deployments/{id}/spec:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    put:
+      summary: Replace the effective config (grow only — shrinking is rejected)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [spec]
+              properties:
+                spec: { $ref: "#/components/schemas/ProfileSpec" }
+      responses:
+        "200": { description: OK }
+        "409": { description: Attempted shrink }
+  /deployments/{id}/deploy:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    post:
+      summary: >
+        Start the async reconcile job: creates missing VMs, adds/extends
+        disks to match the effective config. Used for the first deploy, for
+        retries after errors, and for scale-up after a spec change.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                onConflict:
+                  type: string
+                  enum: [abort, adopt, clean]
+                  default: abort
+                  description: >
+                    How to handle a target VM name already on the hypervisor
+                    owned by another/unknown deployment. abort (default) fails
+                    and reports; adopt takes the VMs over; clean deletes them
+                    and creates fresh.
+      responses:
+        "202": { description: Run started (body is the run) }
+        "409": { description: Deleted, or a job is already running }
+  /deployments/{id}/conflicts:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      summary: >
+        List target VM names already on the hypervisor owned by another or an
+        unknown deployment (for the deploy-time warning).
+      responses:
+        "200": { description: OK (array of conflicts) }
+        "502": { description: Hypervisor unreachable }
+  /deployments/{id}/fill:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    post:
+      summary: >
+        Start a data run: initial-fill or incremental generate data; verify
+        reads all generated data back and checks it against the per-disk
+        checksum manifests (e.g. to prove a backup restore round-tripped
+        intact). Incremental and verify require a succeeded initial fill,
+        except on adopted deployments (their data arrived by restore).
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type]
+              properties:
+                type: { type: string, enum: [initial-fill, incremental, verify] }
+      responses:
+        "202": { description: Run started }
+        "409": { description: Deployment not ready, or a job is running }
+  /deployments/{id}/vms:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      summary: List the deployment's managed VMs
+      responses:
+        "200": { description: OK }
+  /deployments/{id}/runs/{runId}/samples:
+    parameters:
+      - { $ref: "#/components/parameters/id" }
+      - { name: runId, in: path, required: true, schema: { type: string } }
+    get:
+      summary: Throughput time series (ts, mbps, bytesWritten) for a run
+      responses:
+        "200": { description: OK }
+  /deployments/{id}/vms/{vmId}/console:
+    parameters:
+      - { $ref: "#/components/parameters/id" }
+      - { name: vmId, in: path, required: true, schema: { type: string } }
+    get:
+      summary: Tail of the VM's serial console log (read from the datastore)
+      responses:
+        "200": { description: "OK: {console}" }
+        "502": { description: Hypervisor/datastore unreachable }
+  /deployments/{id}/runs:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      summary: List runs of a deployment, newest first
+      responses:
+        "200": { description: OK }
+
+  /deployments/{id}/schedules:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      summary: List the deployment's schedules (timer-based run kickoffs)
+      responses:
+        "200": { description: OK }
+    post:
+      summary: >
+        Add a schedule: fires one run type on a timer — recurring by interval
+        (every), recurring at a wall-clock time (daily) or one-shot (once).
+        Fires while another job is running are retried for up to an hour, then
+        skipped; a fire missed while the controller was down is caught up once
+        on start.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ScheduleRequest" }
+      responses:
+        "201": { description: Created }
+        "400": { description: Invalid action/kind/spec/timezone }
+        "409": { description: Deployment is deleted }
+  /schedules/{id}:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      summary: Get a schedule
+      responses:
+        "200": { description: OK }
+    put:
+      summary: >
+        Replace the schedule's definition and recompute its next fire time
+        (also the enable/disable toggle).
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ScheduleRequest" }
+      responses:
+        "200": { description: OK }
+        "400": { description: Invalid action/kind/spec/timezone }
+    delete:
+      summary: Delete a schedule
+      responses:
+        "204": { description: Deleted }
+
+  /discovered-vms:
+    get:
+      summary: >
+        List discovered VMs: unknown machines that PXE-booted on the isolated
+        network (typically backup restores of GhostFleet VMs, which come up
+        with a fresh MAC) and were booted into the temp OS for inspection.
+        Each carries its agent's disk-inspection report (GhostFleet identity
+        markers, last run, manifest presence) when available.
+      responses:
+        "200": { description: OK }
+  /discovered-vms/{id}:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    delete:
+      summary: >
+        Dismiss a discovery record (the machine is re-discovered if it
+        PXE-boots again).
+      responses:
+        "204": { description: Dismissed }
+  /discovered-vms/{id}/adopt:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    post:
+      summary: >
+        Adopt a discovered VM. rebind points the original VM record (per the
+        disks' identity marker) at the discovered VM — restore-in-place.
+        new-deployment puts it into a fresh adopted deployment (or joins an
+        existing one via deploymentId), leaving the original untouched —
+        restore-alongside; verify/incremental runs then work on the copy.
+        After adoption the VM reboots into managed life.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mode]
+              properties:
+                mode: { type: string, enum: [rebind, new-deployment] }
+                name: { type: string, description: "new-deployment: deployment name (default adopted-<vm>)" }
+                connectionId: { type: string, description: "new-deployment: connection to search; defaults to the original deployment's" }
+                deploymentId: { type: string, description: "new-deployment: join this existing adopted deployment instead of creating one" }
+      responses:
+        "200": { description: "Adopted: {deployment, vm, warning?}" }
+        "409": { description: Not adoptable (no identity, already adopted, original gone, ...) }
+
+components:
+  securitySchemes:
+    bearerApiKey:
+      type: http
+      scheme: bearer
+      description: Static API key in the Authorization header (Bearer <key>).
+    apiKeyHeader:
+      type: apiKey
+      in: header
+      name: X-API-Key
+    apiKeyQuery:
+      type: apiKey
+      in: query
+      name: apikey
+      description: Convenient but leaks into logs/history — prefer a header.
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: ghostfleet_session
+  parameters:
+    id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+  schemas:
+    ConnectionRequest:
+      type: object
+      required: [name, plugin, endpoint, username]
+      properties:
+        name: { type: string }
+        plugin: { type: string, enum: [vsphere] }
+        endpoint: { type: string, example: "https://vcenter.lab.example" }
+        username: { type: string }
+        secret: { type: string, description: "Write-only; never returned" }
+        insecureTLS: { type: boolean }
+    ScheduleRequest:
+      type: object
+      required: [action, kind, spec]
+      properties:
+        action:
+          type: string
+          enum: [incremental, verify, power-on, power-off, teardown]
+        kind:
+          type: string
+          enum: [every, daily, once]
+        spec:
+          type: string
+          description: >
+            every: a Go duration ("24h", "90m"); daily: "HH:MM" with an
+            optional weekday filter ("06:00" or "06:00@Mon,Fri"); once: an
+            RFC3339 timestamp in the future.
+        timezone:
+          type: string
+          description: IANA zone the daily time is evaluated in (default UTC).
+        enabled: { type: boolean, default: true }
+    ProfileSpec:
+      type: object
+      required: [vmCount, namePrefix, disksPerVM, diskSizeGiB, dataPerDiskGiB]
+      properties:
+        vmCount: { type: integer, minimum: 1, maximum: 1000 }
+        namePrefix: { type: string, pattern: "^[a-z][a-z0-9-]{0,31}$" }
+        namePad: { type: integer, default: 4, minimum: 1, maximum: 8 }
+        vcpus: { type: integer, default: 2 }
+        memoryMiB: { type: integer, default: 2048 }
+        disksPerVM: { type: integer, minimum: 1, maximum: 60 }
+        diskSizeGiB: { type: integer, minimum: 1 }
+        dataPerDiskGiB: { type: integer, minimum: 0 }
+        thick: { type: boolean, default: false }
+        compressPercent: { type: number, minimum: 0, maximum: 100 }
+        dedupePercent: { type: number, minimum: 0, maximum: 100 }
+        crossVMDedupePercent: { type: number, minimum: 0, maximum: 100 }
+        changePercent: { type: number, minimum: 0, maximum: 100 }
+        growthPercent: { type: number, minimum: 0, maximum: 1000 }
+        tag: { type: string, description: "Plain name or key=value; on vSphere key=value maps to category=key, tag=value" }
+        afterFill: { type: string, enum: [shutdown, keep-running], default: shutdown }
+        rateLimitMBps: { type: integer, minimum: 0, description: "Aggregate cap per deployment; 0 = unlimited" }
+        maxParallelVMs: { type: integer, minimum: 0, description: "0 = all at once" }
