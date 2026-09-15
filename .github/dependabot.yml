@@ -1,0 +1,43 @@
+# Weekly, grouped dependency updates. Each ecosystem produces at most one PR
+# per week, so review stays cheap; security updates are configured in the
+# repository's Security settings and arrive separately.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      go-modules:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      web-dependencies:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  # Base images of the controller, netboot and tempos images. A bump of the
+  # tempos Alpine base changes the temp-OS kernel the ghost VMs boot, so test
+  # a fill in the lab before merging one of these.
+  - package-ecosystem: docker
+    directory: /deploy
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      base-images:
+        patterns: ["*"]
