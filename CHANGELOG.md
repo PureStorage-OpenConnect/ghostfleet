@@ -8,6 +8,10 @@ project follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- A failed fill/incremental/verify run was marked finished before the post-run
+  shutdown had powered the fleet off, so the UI, a schedule, or an immediately
+  following run could see a "failed" run with VMs still on. The shutdown now
+  completes first, as it already did for successful runs.
 - A fill/incremental/verify run started within 30 s of the previous run's
   post-run shutdown booted nothing: the boot pass trusted the still-fresh agent
   heartbeats and skipped the powered-off VMs, leaving the run "running" until
