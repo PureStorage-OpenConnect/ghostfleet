@@ -56,6 +56,20 @@ func (s *Store) TouchAgent(vmID string) error {
 	return nil
 }
 
+// ResetAgent marks the VM's agent as gone (never registered), e.g. after the
+// VM was powered off: a stale-but-recent heartbeat must not read as alive.
+func (s *Store) ResetAgent(vmID string) error {
+	res, err := s.db.Exec(`UPDATE managed_vms SET agent_status = ?, agent_seen_at = NULL WHERE id = ?`,
+		model.AgentNone, vmID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // GetManagedVM returns one managed VM by ID.
 func (s *Store) GetManagedVM(id string) (*model.ManagedVM, error) {
 	row := s.db.QueryRow(`SELECT `+managedVMCols+` FROM managed_vms WHERE id = ?`, id)
