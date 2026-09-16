@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+# The CI jobs only check out, build and test; a read-only token is enough.
+permissions:
+  contents: read
+
 jobs:
   go:
     runs-on: ubuntu-latest
