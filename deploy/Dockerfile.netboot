@@ -3,7 +3,7 @@
 # script (avoids a second DHCP boot-option round and its loop-avoidance
 # complexity). Runs with host networking on the isolated interface.
 
-FROM alpine:3.22 AS ipxe
+FROM alpine:3.24 AS ipxe
 # Accepted for build uniformity (the release workflow passes VERSION to all
 # three images); nothing here stamps it.
 ARG VERSION=dev
@@ -20,7 +20,7 @@ RUN cd /ipxe/src \
     && make -j"$(nproc)" bin-x86_64-efi/snponly.efi EMBED=/embed.ipxe \
     && ls -lh bin-x86_64-efi/snponly.efi
 
-FROM alpine:3.22
+FROM alpine:3.24
 RUN apk add --no-cache dnsmasq
 COPY --from=ipxe /ipxe/src/bin-x86_64-efi/snponly.efi /tftp/snponly.efi
 COPY deploy/dnsmasq.conf.tmpl /etc/dnsmasq.conf.tmpl

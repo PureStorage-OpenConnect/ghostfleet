@@ -7,7 +7,7 @@ COPY web/ ./
 RUN npm run build
 
 # Build the controller binary
-FROM golang:1.26-alpine AS go
+FROM golang:1.27-alpine AS go
 ARG VERSION=dev
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -19,7 +19,7 @@ RUN CGO_ENABLED=0 go build \
     -o /controller ./cmd/controller
 
 # Runtime image
-FROM alpine:3.22
+FROM alpine:3.24
 RUN adduser -D -H ghostfleet \
     && mkdir -p /var/lib/ghostfleet \
     && chown ghostfleet /var/lib/ghostfleet

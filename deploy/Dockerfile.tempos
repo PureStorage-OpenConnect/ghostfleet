@@ -5,7 +5,7 @@
 # volume served by the controller's /boot endpoints.
 
 # Agent binary (static)
-FROM golang:1.26-alpine AS agent
+FROM golang:1.27-alpine AS agent
 ARG VERSION=dev
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -17,7 +17,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -o /agent ./cmd/agent
 
 # Kernel + initramfs assembly
-FROM alpine:3.22 AS build
+FROM alpine:3.24 AS build
 RUN apk add --no-cache linux-virt kmod cpio
 COPY deploy/tempos-init.sh /tmp/init
 COPY --from=agent /agent /tmp/agent
@@ -51,6 +51,6 @@ RUN set -e; \
     ls -lh /artifacts
 
 # Artifact carrier: copies artifacts into the mounted images volume.
-FROM alpine:3.22
+FROM alpine:3.24
 COPY --from=build /artifacts /artifacts
 CMD ["sh", "-c", "cp -v /artifacts/* /out/ && echo 'temp OS artifacts installed'"]
