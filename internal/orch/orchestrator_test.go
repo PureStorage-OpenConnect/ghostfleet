@@ -38,6 +38,10 @@ func setup(t *testing.T) *fixture {
 
 	driver := fake.New()
 	o := New(st, box, hypervisor.Registry{"fake": driver.Factory})
+	// Runs after the test body but before st.Close (cleanups are LIFO): a
+	// job still polling would otherwise outlive its test and race the next
+	// one's writes to the package-level timing knobs.
+	t.Cleanup(o.Stop)
 
 	blob, _ := box.Encrypt("pw")
 	conn, err := st.CreateConnection(&model.Connection{
@@ -66,6 +70,21 @@ func setup(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	return &fixture{orch: o, store: st, driver: driver, dep: dep}
+}
+
+// fastFill shrinks the fill loop's timing knobs so a test does not wait
+// minutes, and restores them when the test ends. Call it before setup(t):
+// cleanups run LIFO, so the restore then happens after setup's
+// orchestrator.Stop has joined every fill goroutine — restoring while one
+// still polls is a data race on the knobs. Tests may tighten individual
+// knobs further after calling it.
+func fastFill(t *testing.T) {
+	t.Helper()
+	origPoll, origBoot, origTries, origStall := fillPollInterval, bootTimeout, maxBootAttempts, fillStallLimit
+	t.Cleanup(func() {
+		fillPollInterval, bootTimeout, maxBootAttempts, fillStallLimit = origPoll, origBoot, origTries, origStall
+	})
+	fillPollInterval = 10 * time.Millisecond
 }
 
 // waitIdle waits until the deployment job finishes.
@@ -300,9 +319,8 @@ func TestResumeInterruptedReconcile(t *testing.T) {
 
 func TestFillStallFailsRun(t *testing.T) {
 	// Shrink the poll + stall window so the test doesn't wait minutes.
-	origPoll, origStall := fillPollInterval, fillStallLimit
-	fillPollInterval, fillStallLimit = 10*time.Millisecond, 40*time.Millisecond
-	defer func() { fillPollInterval, fillStallLimit = origPoll, origStall }()
+	fastFill(t)
+	fillStallLimit = 40 * time.Millisecond
 
 	f := setup(t)
 	f.orch.StartDeploy(f.dep, model.OnConflictAbort)
@@ -337,9 +355,7 @@ func TestFillStallFailsRun(t *testing.T) {
 // leave VMs with a heartbeating agent untouched (they pick the work order up
 // on their next heartbeat).
 func TestFillPowerCyclesWedgedVMsOnEntry(t *testing.T) {
-	origPoll := fillPollInterval
-	fillPollInterval = 10 * time.Millisecond
-	defer func() { fillPollInterval = origPoll }()
+	fastFill(t)
 
 	f := setup(t)
 	f.orch.StartDeploy(f.dep, model.OnConflictAbort)
@@ -389,9 +405,7 @@ func TestFillPowerCyclesWedgedVMsOnEntry(t *testing.T) {
 // fresh (<30 s) but every VM powered off. The boot pass must go by the power
 // state and power the fleet on, not trust the heartbeats and boot nothing.
 func TestFillPowersOnFreshAgentPoweredOffVMs(t *testing.T) {
-	origPoll := fillPollInterval
-	fillPollInterval = 10 * time.Millisecond
-	defer func() { fillPollInterval = origPoll }()
+	fastFill(t)
 
 	f := setup(t)
 	f.orch.StartDeploy(f.dep, model.OnConflictAbort)
@@ -471,11 +485,8 @@ func TestFillAfterShutdownResetsAgent(t *testing.T) {
 // keeps the healthy VMs' progress, and the post-fill shutdown still applies
 // so the fleet ends powered off (no wedged-powered-on carry-over).
 func TestFillBootWatchdogFailsUnbootableVMAlone(t *testing.T) {
-	origPoll, origBoot, origTries, origStall := fillPollInterval, bootTimeout, maxBootAttempts, fillStallLimit
+	fastFill(t)
 	fillPollInterval, bootTimeout, maxBootAttempts, fillStallLimit = 5*time.Millisecond, 30*time.Millisecond, 2, 10*time.Second
-	defer func() {
-		fillPollInterval, bootTimeout, maxBootAttempts, fillStallLimit = origPoll, origBoot, origTries, origStall
-	}()
 
 	f := setup(t)
 	f.orch.StartDeploy(f.dep, model.OnConflictAbort)

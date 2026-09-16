@@ -41,6 +41,7 @@ func testServerWithDriver(t *testing.T, password string) (*httptest.Server, *htt
 	}
 	driver := fake.New()
 	orchestrator := orch.New(st, box, hypervisor.Registry{"vsphere": driver.Factory})
+	t.Cleanup(orchestrator.Stop)
 	srv := httptest.NewServer(New(Config{
 		Store: st, Secrets: box, Orch: orchestrator, Password: password, WebDist: dir,
 		Discovery: true, // the production default
@@ -434,6 +435,7 @@ func TestAPIKeyAuth(t *testing.T) {
 		t.Fatal(err)
 	}
 	orchestrator := orch.New(st, box, hypervisor.Registry{})
+	t.Cleanup(orchestrator.Stop)
 	srv := httptest.NewServer(New(Config{
 		Store: st, Secrets: box, Orch: orchestrator, APIKeys: []string{"good-key"}, WebDist: dir,
 	}))
