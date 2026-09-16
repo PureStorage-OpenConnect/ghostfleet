@@ -257,9 +257,10 @@ func TestDiscoveryDisabled(t *testing.T) {
 		t.Fatal(err)
 	}
 	driver := fake.New()
+	orchestrator := orch.New(st, box, hypervisor.Registry{"vsphere": driver.Factory})
+	t.Cleanup(orchestrator.Stop)
 	srv := httptest.NewServer(New(Config{
-		Store: st, Secrets: box, WebDist: dir,
-		Orch: orch.New(st, box, hypervisor.Registry{"vsphere": driver.Factory}),
+		Store: st, Secrets: box, WebDist: dir, Orch: orchestrator,
 		// Discovery off: unknown MACs get the polite exit script.
 	}))
 	t.Cleanup(srv.Close)

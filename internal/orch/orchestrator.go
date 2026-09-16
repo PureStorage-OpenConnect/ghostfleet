@@ -33,6 +33,7 @@ type Orchestrator struct {
 
 	mu     sync.Mutex
 	active map[string]context.CancelFunc // deployment ID -> cancel for its running job
+	jobs   sync.WaitGroup                // one count per active entry, released with it
 }
 
 // New wires an orchestrator.
@@ -84,6 +85,7 @@ func (o *Orchestrator) acquire(deploymentID string) (context.Context, error) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	o.active[deploymentID] = cancel
+	o.jobs.Add(1)
 	return ctx, nil
 }
 
@@ -93,7 +95,22 @@ func (o *Orchestrator) release(deploymentID string) {
 	if cancel, ok := o.active[deploymentID]; ok {
 		cancel() // free the context; harmless if already cancelled
 		delete(o.active, deploymentID)
+		o.jobs.Done()
 	}
+}
+
+// Stop cancels every running job and blocks until each has returned. The
+// jobs record themselves as cancelled, so this is for tests and tooling that
+// need a quiescent orchestrator. The controller deliberately does not call
+// it on shutdown: an interrupted job stays "running" in the store and
+// ResumeInterrupted re-attaches to it on the next start (NFR-2/NFR-3).
+func (o *Orchestrator) Stop() {
+	o.mu.Lock()
+	for _, cancel := range o.active {
+		cancel()
+	}
+	o.mu.Unlock()
+	o.jobs.Wait()
 }
 
 // Cancel aborts the deployment's running job, if any. The job's context is
