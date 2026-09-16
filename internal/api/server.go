@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 
 	"github.com/PureStorage-OpenConnect/ghostfleet/internal/buildinfo"
 	"github.com/PureStorage-OpenConnect/ghostfleet/internal/orch"
@@ -139,15 +140,24 @@ func New(cfg Config) http.Handler {
 
 // spaHandler serves static files and falls back to index.html so that
 // client-side routes like /profiles work on reload.
+//
+// The existence check goes through the same http.Dir the file server uses,
+// so the request path is never joined onto dist by hand: http.Dir rejects
+// ".." segments and stays rooted under dist, which keeps the fallback from
+// becoming a file-existence oracle for the rest of the filesystem.
 func spaHandler(dist string) http.Handler {
-	fs := http.FileServer(http.Dir(dist))
+	root := http.Dir(dist)
+	fs := http.FileServer(root)
+	index := filepath.Join(dist, "index.html")
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
-			if _, err := os.Stat(dist + r.URL.Path); os.IsNotExist(err) {
+			f, err := root.Open(r.URL.Path)
+			if err != nil {
 				w.Header().Set("Link", serviceDescLink)
-				http.ServeFile(w, r, dist+"/index.html")
+				http.ServeFile(w, r, index)
 				return
 			}
+			f.Close()
 		} else {
 			w.Header().Set("Link", serviceDescLink)
 		}
