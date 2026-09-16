@@ -268,7 +268,10 @@ the staggering.
   plain HTTP (decision: this is a demo/lab tool on a trusted management
   network). If TLS is wanted, terminate it at a reverse proxy (nginx, Caddy,
   Traefik, …) in front of the controller, which is published on ports 80 and
-  8080. Baking certs into the controller is intentionally out of scope.
+  8080. Baking certs into the controller is intentionally out of scope. The
+  session cookie is `HttpOnly`, `SameSite=Lax`, and `Secure` whenever the
+  request came over TLS or the proxy sent `X-Forwarded-Proto: https`
+  (`GHOSTFLEET_SECURE_COOKIES=on|off` overrides the auto-detection).
 - Isolated plane: per-VM boot tokens generated when the VM record is created,
   embedded in the kernel cmdline of that VM's boot script (matched by MAC),
   so a stray machine on the isolated net can't fetch work orders. No secrets

@@ -64,6 +64,9 @@ func main() {
 	// On by default — discovery tokens are report-only, so the §7 boot-token
 	// invariant holds; set GHOSTFLEET_DISCOVERY=off to disable.
 	discovery := !strings.EqualFold(os.Getenv("GHOSTFLEET_DISCOVERY"), "off")
+	// Secure attribute on the session cookie: "on", "off", or empty for auto
+	// (Secure when the request came over TLS or X-Forwarded-Proto: https).
+	secureCookies := os.Getenv("GHOSTFLEET_SECURE_COOKIES")
 
 	slog.Info("controller starting",
 		"version", buildinfo.Version, "addr", *addr,
@@ -85,7 +88,7 @@ func main() {
 
 	srv := &http.Server{Addr: *addr, Handler: api.New(api.Config{
 		Store: st, Secrets: box, Orch: orchestrator,
-		Password: password, APIKeys: apiKeys, WebDist: *webDist,
+		Password: password, APIKeys: apiKeys, SecureCookies: secureCookies, WebDist: *webDist,
 		ImagesDir: *imagesDir, BootURL: *bootURL, Discovery: discovery,
 	})}
 

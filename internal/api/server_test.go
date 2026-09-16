@@ -364,6 +364,64 @@ func TestCancelNoRunningJob(t *testing.T) {
 	}
 }
 
+// TestSessionCookieSecure covers the Secure attribute policy: off on plain
+// HTTP (the default deployment), on behind a TLS-terminating proxy, and
+// forced either way by Config.SecureCookies.
+func TestSessionCookieSecure(t *testing.T) {
+	login := func(t *testing.T, secureCookies string, hdr http.Header) []*http.Cookie {
+		t.Helper()
+		dir := t.TempDir()
+		st, err := store.Open(filepath.Join(dir, "test.db"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { st.Close() })
+		box, err := secrets.Open(filepath.Join(dir, "secret.key"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		h := New(Config{Store: st, Secrets: box, Password: "hunter2", SecureCookies: secureCookies, WebDist: dir})
+		req := httptest.NewRequest("POST", "/api/v1/session", strings.NewReader(`{"password":"hunter2"}`))
+		for k, v := range hdr {
+			req.Header[k] = v
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != 200 {
+			t.Fatalf("login: %d %s", rec.Code, rec.Body)
+		}
+		cookies := rec.Result().Cookies()
+		if len(cookies) != 1 || cookies[0].Name != sessionCookie {
+			t.Fatalf("cookies = %v", cookies)
+		}
+		return cookies
+	}
+	cases := []struct {
+		name   string
+		mode   string
+		hdr    http.Header
+		secure bool
+	}{
+		{"plain http auto", "", nil, false},
+		{"proxy https auto", "", http.Header{"X-Forwarded-Proto": {"https"}}, true},
+		{"proxy chain auto", "", http.Header{"X-Forwarded-Proto": {"https, http"}}, true},
+		{"proxy http auto", "", http.Header{"X-Forwarded-Proto": {"http"}}, false},
+		{"forced on", "on", nil, true},
+		{"forced off", "off", http.Header{"X-Forwarded-Proto": {"https"}}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := login(t, tc.mode, tc.hdr)[0]
+			if c.Secure != tc.secure {
+				t.Fatalf("Secure = %v, want %v", c.Secure, tc.secure)
+			}
+			if !c.HttpOnly || c.SameSite != http.SameSiteLaxMode {
+				t.Fatalf("HttpOnly=%v SameSite=%v", c.HttpOnly, c.SameSite)
+			}
+		})
+	}
+}
+
 func TestAPIKeyAuth(t *testing.T) {
 	dir := t.TempDir()
 	st, err := store.Open(filepath.Join(dir, "test.db"))

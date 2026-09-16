@@ -137,7 +137,10 @@ For programmatic/automation access, set one or more static API keys with
 `GHOSTFLEET_API_KEYS=key1,key2`; pass a key as `Authorization: Bearer <key>` or
 `X-API-Key: <key>` (or `?apikey=<key>`, which is convenient but leaks into
 logs — prefer a header). Configuring a password and/or API keys turns the API
-gate on; with neither, all endpoints are open. Every deployment action also
+gate on; with neither, all endpoints are open. The session cookie is marked
+`Secure` automatically when a request arrives over TLS or a reverse proxy sets
+`X-Forwarded-Proto: https`; force it with `GHOSTFLEET_SECURE_COOKIES=on|off`
+if your proxy does not send that header. Every deployment action also
 has a copy-pastable URL under its **API** button in the UI; see
 [examples/Invoke-GhostfleetIncremental.ps1](examples/Invoke-GhostfleetIncremental.ps1)
 for triggering an incremental run from a backup-job post script. State lives in

@@ -26,6 +26,9 @@ services:
       - GHOSTFLEET_API_KEYS=${GHOSTFLEET_API_KEYS:-}
       # Discovery of unknown VMs (restored ghost VMs); on by default, "off" disables.
       - GHOSTFLEET_DISCOVERY=${GHOSTFLEET_DISCOVERY:-}
+      # Secure attribute on the session cookie: on / off / empty = auto
+      # (Secure when the request came over TLS or X-Forwarded-Proto: https).
+      - GHOSTFLEET_SECURE_COOKIES=${GHOSTFLEET_SECURE_COOKIES:-}
     volumes:
       - state:/var/lib/ghostfleet
       - images:/var/lib/ghostfleet/images:ro
