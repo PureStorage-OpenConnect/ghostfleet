@@ -61,9 +61,20 @@ func main() {
 		runDiscovery(client) // never returns
 	}
 
+	// Look at the data disks (read-only) before registering and tell the
+	// controller what they hold. A controller that never saw this fleet's
+	// fill history (re-installed, or handed an existing fleet by a
+	// conflict-adopt) learns from this that the disks are already filled —
+	// so a plain power-on recovers the fleet's state, no re-fill needed.
+	disks := inspectDisks()
+	if len(disks) > 0 {
+		summary, _ := json.Marshal(disks)
+		logf("disks: %s", summary)
+	}
+
 	// Register with retries — the controller may briefly be unreachable.
 	for {
-		resp, err := client.poll("register")
+		resp, err := client.pollWith("register", map[string]any{"disks": disks})
 		if err == nil {
 			logf("registered")
 			client.dispatch(resp)
@@ -102,7 +113,17 @@ type agentResponse struct {
 }
 
 func (c *httpClient) poll(endpoint string) (*agentResponse, error) {
-	status, body, err := c.post("/agent/v1/"+endpoint, map[string]string{"token": c.token})
+	return c.pollWith(endpoint, nil)
+}
+
+// pollWith is poll with extra body fields next to the token (e.g. the disk
+// inspection sent with register).
+func (c *httpClient) pollWith(endpoint string, extra map[string]any) (*agentResponse, error) {
+	payload := map[string]any{"token": c.token}
+	for k, v := range extra {
+		payload[k] = v
+	}
+	status, body, err := c.post("/agent/v1/"+endpoint, payload)
 	if err != nil {
 		return nil, err
 	}

@@ -652,6 +652,47 @@ function agentBadge(vm: ManagedVM): { label: string; cls: string } {
     : { label: `agent lost (${Math.round(ageSec / 60)}m)`, cls: 'text-amber-600' }
 }
 
+// dataBadge shows what a VM's disks hold, as last reported by its agent at
+// boot (or settled by a completed run). Unknown until the agent has booted
+// on a controller that asks.
+function dataBadge(vm: ManagedVM): { label: string; cls: string; title: string } {
+  switch (vm.dataState) {
+    case 'filled':
+      return {
+        label: 'data on disk',
+        cls: 'text-emerald-600',
+        title:
+          'Every data disk carries GhostFleet data' +
+          (vm.dataRunId ? ` (last run ${vm.dataRunId.slice(0, 8)})` : '') +
+          (vm.dataManifest ? ', checksum manifest present' : ', no checksum manifest — verify not possible yet'),
+      }
+    case 'partial':
+      return {
+        label: 'partial data',
+        cls: 'text-amber-600',
+        title: 'Some data disks carry GhostFleet data, others are blank',
+      }
+    case 'empty':
+      return { label: 'blank disks', cls: 'text-slate-400', title: 'No data disk carries GhostFleet data yet' }
+    default:
+      return { label: '', cls: '', title: '' }
+  }
+}
+
+// needsDataReport: the controller has no record of this fleet being filled,
+// but has not heard from every VM's agent either — a power-on lets the agents
+// report their disks, which is how a re-installed controller or a
+// conflict-adopted fleet recovers its filled state without a re-fill.
+function needsDataReport(d: Deployment, vms: ManagedVM[]): boolean {
+  return (
+    d.status === 'ready' &&
+    !d.filled &&
+    d.origin !== 'adopted' &&
+    vms.length > 0 &&
+    vms.some((vm) => !vm.dataState)
+  )
+}
+
 async function toggleVMs(d: Deployment) {
   if (expandedVMs.value[d.id]) {
     const copy = { ...expandedVMs.value }
@@ -1483,6 +1524,15 @@ const labelClass = 'block text-xs font-medium text-slate-500 mb-1'
                   No VMs on the hypervisor (yet).
                 </p>
                 <div v-else class="space-y-1.5">
+                  <p
+                    v-if="needsDataReport(d, expandedVMs[d.id]!)"
+                    class="mb-2 text-xs text-amber-700"
+                  >
+                    Not filled as far as this controller knows. If these disks already hold
+                    GhostFleet data (a re-installed controller, or VMs adopted on deploy), power the
+                    fleet on: the agents report their disks at boot and the incremental and verify
+                    actions unlock — no re-fill needed.
+                  </p>
                   <div
                     v-for="vm in expandedVMs[d.id]"
                     :key="vm.id"
@@ -1495,6 +1545,12 @@ const labelClass = 'block text-xs font-medium text-slate-500 mb-1'
                     <span class="w-24 shrink-0" :class="agentBadge(vm).cls">{{
                       agentBadge(vm).label
                     }}</span>
+                    <span
+                      class="w-24 shrink-0"
+                      :class="dataBadge(vm).cls"
+                      :title="dataBadge(vm).title"
+                      >{{ dataBadge(vm).label }}</span
+                    >
                     <button
                       class="shrink-0 text-slate-400 hover:text-slate-700"
                       title="View serial console"

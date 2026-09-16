@@ -49,7 +49,10 @@ func runDiscovery(client *httpClient) {
 
 // inspectDisks mounts every attached disk read-only and reads the GhostFleet
 // markers, if any. A disk that doesn't mount as the expected filesystem is
-// still reported (device + size), just without identity.
+// still reported (device + size), just without identity. Used by the
+// discovery boot and, since the report travels with register, by every
+// managed boot too — so the disks are left unmounted for the fill that may
+// follow.
 func inspectDisks() []datagen.DiscoveryDisk {
 	names, err := allBlockDevices()
 	if err != nil {
@@ -89,7 +92,11 @@ func inspectDisks() []datagen.DiscoveryDisk {
 			disk.Manifest = true
 			disk.FileCount = len(m.Files)
 		}
-		_ = syscall.Unmount(mnt, syscall.MNT_DETACH)
+		// A plain unmount first: a fill may mkfs this device right after,
+		// which must not find a lazily-detached mount still on it.
+		if err := syscall.Unmount(mnt, 0); err != nil {
+			_ = syscall.Unmount(mnt, syscall.MNT_DETACH)
+		}
 		out = append(out, disk)
 	}
 	return out

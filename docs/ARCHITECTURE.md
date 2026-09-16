@@ -165,8 +165,14 @@ data disks are **thin-provisioned by default**, thick as an option (PRO-11).
    the **agent** (single static binary) — with a kernel cmdline carrying the
    controller URL and a per-VM boot token.
 4. The temp OS autoconfigures via SLAAC (no DHCPv6 client needed); the agent
-   registers with its token, receives its **work order** (disk layout +
-   generation plan + seeds), runs it, and streams progress/metrics.
+   inspects its data disks read-only for GhostFleet markers, registers with
+   its token and that inspection, receives its **work order** (disk layout +
+   generation plan + seeds), runs it, and streams progress/metrics. The
+   inspection is how the controller knows what the disks already hold: a
+   deployment counts as *filled* (incremental/verify allowed) when it ran the
+   initial fill itself **or** every VM reports filled disks — so a fleet whose
+   history the controller never saw (a re-installed controller, or existing
+   VMs adopted on deploy) recovers by powering it on, with no re-fill.
 5. On completion the agent reports done (with bounded retry) and idles; the
    *controller* applies the profile's post-run power action (shutdown or
    keep running, PRO-5) — on failed runs too, so the fleet always ends in a

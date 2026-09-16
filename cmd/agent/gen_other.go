@@ -15,3 +15,6 @@ func runDiscovery(_ *httpClient) {
 	logf("discovery is only supported on the Linux temp OS")
 	sleepForever()
 }
+
+// inspectDisks is only implemented for Linux (the temp OS).
+func inspectDisks() []datagen.DiscoveryDisk { return nil }

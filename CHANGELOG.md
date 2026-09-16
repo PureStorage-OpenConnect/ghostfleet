@@ -6,6 +6,18 @@ project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Agents report what their data disks hold when they register after boot
+  (the same read-only inspection discovery uses), and the controller keeps a
+  per-VM data state — filled, partial or blank — shown in the VM list. A
+  deployment now counts as filled, which unlocks incremental and verify, when
+  every VM reports filled disks and not only when this controller ran the
+  initial fill itself. A fleet whose history the controller never saw (a
+  re-installed controller, or existing VMs adopted on deploy) recovers by
+  simply powering it on; no re-fill needed. Agents report only from the temp
+  OS image of this release onward.
+
 ## [1.1.0] — 2026-09-16
 
 ### Added
