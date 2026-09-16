@@ -4,6 +4,17 @@ All notable changes to GhostFleet are documented in this file. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- A fill/incremental/verify run started within 30 s of the previous run's
+  post-run shutdown booted nothing: the boot pass trusted the still-fresh agent
+  heartbeats and skipped the powered-off VMs, leaving the run "running" until
+  the boot watchdog power-cycled the fleet five minutes later. The boot pass now
+  goes by the hypervisor's actual power state, and the post-run shutdown clears
+  agent liveness so a powered-off VM never shows an online agent.
+
 ## [1.0.0] — 2026-09-15
 
 First stable, public release. From this point the profile format and the REST

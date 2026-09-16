@@ -384,6 +384,87 @@ func TestFillPowerCyclesWedgedVMsOnEntry(t *testing.T) {
 	}
 }
 
+// TestFillPowersOnFreshAgentPoweredOffVMs: an incremental started right after
+// the initial fill's post-run shutdown finds every agent heartbeat still
+// fresh (<30 s) but every VM powered off. The boot pass must go by the power
+// state and power the fleet on, not trust the heartbeats and boot nothing.
+func TestFillPowersOnFreshAgentPoweredOffVMs(t *testing.T) {
+	origPoll := fillPollInterval
+	fillPollInterval = 10 * time.Millisecond
+	defer func() { fillPollInterval = origPoll }()
+
+	f := setup(t)
+	f.orch.StartDeploy(f.dep, model.OnConflictAbort)
+	f.waitIdle(t)
+	vms, _ := f.store.ListManagedVMs(f.dep.ID)
+
+	for _, vm := range vms {
+		f.driver.PowerOff(context.Background(), vm.Ref)
+		if err := f.store.TouchAgent(vm.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	baseline := len(f.driver.PowerOps())
+
+	if _, err := f.orch.StartFill(f.dep, model.RunInitialFill); err != nil {
+		t.Fatalf("StartFill: %v", err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if len(f.driver.PowerOps())-baseline >= len(vms) {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	f.orch.Cancel(f.dep.ID)
+
+	on := map[string]bool{}
+	for _, op := range f.driver.PowerOps()[baseline:] {
+		if strings.HasPrefix(op, "off:") {
+			t.Fatalf("powered-off VM was power-cycled (%s); a plain power-on is enough", op)
+		}
+		if strings.HasPrefix(op, "on:") {
+			on[strings.TrimPrefix(op, "on:")] = true
+		}
+	}
+	for _, vm := range vms {
+		if !on[vm.Name] {
+			t.Errorf("%s: powered off with a fresh heartbeat, but never powered on", vm.Name)
+		}
+	}
+}
+
+// TestFillAfterShutdownResetsAgent: the post-run shutdown clears agent
+// liveness, so a powered-off VM never shows an online agent.
+func TestFillAfterShutdownResetsAgent(t *testing.T) {
+	f := setup(t)
+	f.orch.StartDeploy(f.dep, model.OnConflictAbort)
+	f.waitIdle(t)
+	vms, _ := f.store.ListManagedVMs(f.dep.ID)
+	for _, vm := range vms {
+		if err := f.store.TouchAgent(vm.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	driver, err := f.orch.OpenDriver(context.Background(), f.dep.ConnectionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer driver.Close()
+	f.dep.Spec.AfterFill = model.AfterFillShutdown
+	f.orch.applyAfterFill(context.Background(), driver, f.dep, vms)
+
+	after, _ := f.store.ListManagedVMs(f.dep.ID)
+	for _, vm := range after {
+		if vm.AgentStatus != model.AgentNone || vm.AgentSeenAt != nil {
+			t.Errorf("%s: agent status %q seen %v after shutdown, want none/nil", vm.Name, vm.AgentStatus, vm.AgentSeenAt)
+		}
+		if f.driver.State(vm.Name) != hypervisor.StatePoweredOff {
+			t.Errorf("%s: not powered off", vm.Name)
+		}
+	}
+}
+
 // TestFillBootWatchdogFailsUnbootableVMAlone: a VM whose agent never
 // registers is power-cycled up to maxBootAttempts, then marked failed by
 // itself; the run finishes as a partial failure that names the culprit and

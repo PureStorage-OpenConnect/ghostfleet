@@ -122,19 +122,21 @@ func (o *Orchestrator) runFill(ctx context.Context, d *model.Deployment, run *mo
 	}
 	defer driver.Close()
 
-	// Boot the fleet. A VM whose agent heartbeated within agentFreshLimit is
-	// left untouched — the live agent picks the work order up on its next
-	// heartbeat. Every other VM gets a guaranteed fresh PXE boot: powered on,
-	// or power-cycled if it is already on, because a powered-on VM without a
-	// live agent is unreachable any other way.
+	// Boot the fleet, deciding per VM from the hypervisor's actual power
+	// state — never from the agent heartbeat alone. A powered-off VM is simply
+	// powered on. A powered-on VM whose agent heartbeated within
+	// agentFreshLimit is left untouched: the live agent picks the work order
+	// up on its next heartbeat. A powered-on VM without a live agent is
+	// unreachable any other way, so it gets a hard power-cycle for a fresh
+	// PXE boot. The power-state check matters because heartbeats stay fresh
+	// for up to 30 s after the previous run's post-fill shutdown; trusting
+	// them alone left a fleet powered off with a "running" incremental until
+	// the boot watchdog kicked in.
 	bootAt := make(map[string]time.Time, len(vms))
 	bootTries := make(map[string]int, len(vms))
 	for _, vm := range vms {
 		bootAt[vm.ID], bootTries[vm.ID] = start, 1
-		if vm.AgentSeenAt != nil && time.Since(*vm.AgentSeenAt) < agentFreshLimit {
-			continue
-		}
-		o.powerCycle(ctx, driver, vm)
+		o.bootVM(ctx, driver, vm)
 	}
 
 	// writeStart marks when data first started flowing (after the VMs boot
@@ -258,6 +260,28 @@ func (o *Orchestrator) runFill(ctx context.Context, d *model.Deployment, run *mo
 	}
 }
 
+// bootVM brings a VM into a state where its agent will pick up the run's work
+// order: powers it on if it is off, leaves it alone if it is on with a live
+// agent, and power-cycles it if it is on without one.
+func (o *Orchestrator) bootVM(ctx context.Context, driver hypervisor.Driver, vm *model.ManagedVM) {
+	v, err := driver.GetVM(ctx, vm.Ref)
+	if err != nil {
+		slog.Warn("fill: reading VM power state failed, power-cycling", "vm", vm.Name, "err", err)
+		o.powerCycle(ctx, driver, vm)
+		return
+	}
+	if v != nil && v.State == hypervisor.StatePoweredOn {
+		if vm.AgentSeenAt != nil && time.Since(*vm.AgentSeenAt) < agentFreshLimit {
+			return // live agent; it picks up the work order on its next heartbeat
+		}
+		o.powerCycle(ctx, driver, vm)
+		return
+	}
+	if err := driver.PowerOn(ctx, vm.Ref); err != nil {
+		slog.Warn("fill: power on failed", "vm", vm.Name, "err", err)
+	}
+}
+
 // powerCycle forces a fresh PXE boot: hard off if the VM is running (tolerated
 // if it is gone or races off), then on. The temp OS is stateless and every
 // write is deterministic/idempotent, so a hard cycle is always safe.
@@ -284,6 +308,12 @@ func (o *Orchestrator) applyAfterFill(ctx context.Context, driver hypervisor.Dri
 	for _, vm := range vms {
 		if err := driver.PowerOff(ctx, vm.Ref); err != nil {
 			slog.Warn("fill: post-run power off failed", "vm", vm.Name, "err", err)
+			continue
+		}
+		// The agent died with the power; drop its liveness so neither the UI
+		// nor the next run's boot pass mistakes a fresh heartbeat for a live VM.
+		if err := o.store.ResetAgent(vm.ID); err != nil {
+			slog.Warn("fill: resetting agent state after power off", "vm", vm.Name, "err", err)
 		}
 	}
 }
