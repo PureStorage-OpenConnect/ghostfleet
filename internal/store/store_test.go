@@ -338,3 +338,89 @@ func TestSchedules(t *testing.T) {
 		t.Fatalf("schedule should be gone after teardown, got %v", err)
 	}
 }
+
+// TestDataStateAndFilled: a deployment is filled by run history or by every VM
+// reporting filled disks; completed fills/incrementals settle the state,
+// verify runs do not, and a rebind resets it.
+func TestDataStateAndFilled(t *testing.T) {
+	s := testStore(t)
+	p, _ := s.CreateProfile("prof-data", testSpec())
+	c, _ := s.CreateConnection(&model.Connection{Name: "vc-data", Plugin: "vsphere", Endpoint: "e", Username: "u"}, []byte("x"))
+	d, _ := s.CreateDeployment(&model.Deployment{
+		Name: "dep-data", ProfileID: p.ID, ProfileVersion: 1, ConnectionID: c.ID,
+		Spec: testSpec(), Placement: model.Placement{},
+	})
+	filled := func(want bool, why string) {
+		t.Helper()
+		got, err := s.DeploymentFilled(d.ID)
+		if err != nil || got != want {
+			t.Fatalf("%s: DeploymentFilled = %v, %v; want %v", why, got, err, want)
+		}
+		ids, err := s.FilledDeploymentIDs()
+		if err != nil || ids[d.ID] != want {
+			t.Fatalf("%s: FilledDeploymentIDs[%s] = %v, %v; want %v", why, d.ID, ids[d.ID], err, want)
+		}
+	}
+
+	filled(false, "no VMs")
+	v1 := &model.ManagedVM{DeploymentID: d.ID, Name: "ghost-0001", Ref: "vm-1", DiskCount: 2, DiskSizeGiB: 10, MAC: "00:50:56:00:00:01"}
+	v2 := &model.ManagedVM{DeploymentID: d.ID, Name: "ghost-0002", Ref: "vm-2", DiskCount: 2, DiskSizeGiB: 10, MAC: "00:50:56:00:00:02"}
+	for _, v := range []*model.ManagedVM{v1, v2} {
+		if err := s.AddManagedVM(v); err != nil {
+			t.Fatalf("AddManagedVM: %v", err)
+		}
+	}
+	filled(false, "VMs never reported")
+
+	if err := s.SetVMDataState(v1.ID, model.DataFilled, "run-old", true); err != nil {
+		t.Fatalf("SetVMDataState: %v", err)
+	}
+	filled(false, "one of two VMs reported filled")
+	got, _ := s.GetManagedVM(v1.ID)
+	if got.DataState != model.DataFilled || got.DataRunID != "run-old" || !got.DataManifest || got.DataSeenAt == nil {
+		t.Fatalf("data state not persisted: %+v", got)
+	}
+	s.SetVMDataState(v2.ID, model.DataFilled, "run-old", false)
+	filled(true, "every VM reported filled")
+	s.SetVMDataState(v2.ID, model.DataEmpty, "", false)
+	filled(false, "a VM reported blank disks")
+
+	// A completed initial fill settles the VM's state (run ID from the run).
+	run, _ := s.CreateRun(d.ID, model.RunInitialFill)
+	s.AssignFill(v2.ID, run.ID, 100)
+	if err := s.ReportFillProgress(v2.ID, 100, 0, true, ""); err != nil {
+		t.Fatalf("ReportFillProgress: %v", err)
+	}
+	got, _ = s.GetManagedVM(v2.ID)
+	if got.DataState != model.DataFilled || got.DataRunID != run.ID || !got.DataManifest {
+		t.Fatalf("done fill did not settle data state: %+v", got)
+	}
+	filled(true, "fill done on the blank VM")
+
+	// A failed run leaves it alone; a completed verify (read-only) too.
+	s.SetVMDataState(v2.ID, model.DataEmpty, "", false)
+	s.AssignFill(v2.ID, run.ID, 100)
+	s.ReportFillProgress(v2.ID, 10, 0, false, "boom")
+	if got, _ = s.GetManagedVM(v2.ID); got.DataState != model.DataEmpty {
+		t.Fatalf("failed fill changed data state: %+v", got)
+	}
+	verify, _ := s.CreateRun(d.ID, model.RunVerify)
+	s.AssignFill(v2.ID, verify.ID, 100)
+	s.ReportFillProgress(v2.ID, 100, 0, true, "")
+	if got, _ = s.GetManagedVM(v2.ID); got.DataState != model.DataEmpty {
+		t.Fatalf("done verify changed data state: %+v", got)
+	}
+
+	// Run history still counts on its own.
+	s.StartRun(run.ID)
+	s.FinishRun(run.ID, model.RunSucceeded, "{}")
+	filled(true, "succeeded initial-fill run")
+
+	// A rebind (restore-in-place) forgets what the old disks held.
+	if err := s.RebindManagedVM(v1.ID, "00:50:56:00:00:09", "vm-9"); err != nil {
+		t.Fatalf("RebindManagedVM: %v", err)
+	}
+	if got, _ = s.GetManagedVM(v1.ID); got.DataState != model.DataUnknown || got.DataRunID != "" || got.DataSeenAt != nil {
+		t.Fatalf("rebind kept data state: %+v", got)
+	}
+}

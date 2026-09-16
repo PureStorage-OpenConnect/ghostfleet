@@ -120,6 +120,10 @@ func TestDiscoveryAdoptNewDeployment(t *testing.T) {
 	if vm["name"] != vmName+"-restored" || vm["mac"] != mac {
 		t.Fatalf("adopted vm: %v", vm)
 	}
+	// The discovery report already told us what the disks hold.
+	if vm["dataState"] != "filled" || vm["dataRunId"] != "run-original" || vm["dataManifest"] != true {
+		t.Fatalf("adopted vm data state: %v", vm)
+	}
 	adoptedID := adopted["id"].(string)
 
 	// The original deployment is untouched.

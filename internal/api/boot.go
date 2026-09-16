@@ -77,20 +77,27 @@ func (s *server) handleBootFile(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// agentRequest is the body of register and heartbeat. Disks is the agent's
+// boot-time read-only inspection of its data disks (same shape as a
+// discovery report); it is sent with register only and tells the controller
+// what the disks already hold.
+type agentRequest struct {
+	Token string                  `json:"token"`
+	Disks []datagen.DiscoveryDisk `json:"disks,omitempty"`
+}
+
 // agentAuth resolves the VM behind an agent request's token.
-func (s *server) agentAuth(w http.ResponseWriter, r *http.Request) *model.ManagedVM {
-	var body struct {
-		Token string `json:"token"`
-	}
+func (s *server) agentAuth(w http.ResponseWriter, r *http.Request) (*model.ManagedVM, *agentRequest) {
+	var body agentRequest
 	if !readJSON(w, r, &body) {
-		return nil
+		return nil, nil
 	}
 	vm, err := s.cfg.Store.GetManagedVMByToken(body.Token)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, "unknown boot token")
-		return nil
+		return nil, nil
 	}
-	return vm
+	return vm, &body
 }
 
 // agentResponse is returned by register and heartbeat: the current action
@@ -103,20 +110,36 @@ type agentResponse struct {
 
 // handleAgentRegister is the agent's first call after boot; like heartbeat
 // it returns the current action so the agent can start work immediately.
+// It also records the agent's disk inspection when one was sent: what the
+// disks hold (filled / empty / partial) becomes the VM's data state, so a
+// deployment whose run history this controller never saw (a re-install, or
+// an existing fleet adopted on deploy) counts as filled once its VMs have
+// booted — a power-on recovers it, no re-fill needed.
 func (s *server) handleAgentRegister(w http.ResponseWriter, r *http.Request) {
-	s.agentRespond(w, r)
+	vm, req := s.agentAuth(w, r)
+	if vm == nil {
+		return
+	}
+	if len(req.Disks) > 0 {
+		state, runID, manifest := datagen.DataState(req.Disks)
+		if err := s.cfg.Store.SetVMDataState(vm.ID, state, runID, manifest); err != nil {
+			writeStoreError(w, err)
+			return
+		}
+	}
+	s.agentRespond(w, vm)
 }
 
 // handleAgentHeartbeat refreshes liveness and returns the current action.
 func (s *server) handleAgentHeartbeat(w http.ResponseWriter, r *http.Request) {
-	s.agentRespond(w, r)
-}
-
-func (s *server) agentRespond(w http.ResponseWriter, r *http.Request) {
-	vm := s.agentAuth(w, r)
+	vm, _ := s.agentAuth(w, r)
 	if vm == nil {
 		return
 	}
+	s.agentRespond(w, vm)
+}
+
+func (s *server) agentRespond(w http.ResponseWriter, vm *model.ManagedVM) {
 	if err := s.cfg.Store.TouchAgent(vm.ID); err != nil {
 		writeStoreError(w, err)
 		return

@@ -147,12 +147,33 @@ func (s *Store) HasSucceededRun(deploymentID, runType string) (bool, error) {
 	return n > 0, err
 }
 
-// FilledDeploymentIDs returns the set of deployment IDs with at least one
-// succeeded initial-fill run — one query to gate the incremental action across
-// the whole deployment list.
+// DeploymentFilled reports whether a deployment's disks hold generated data:
+// it has a succeeded initial-fill run, or every one of its VMs reports its
+// disks as filled (model.DataFilled). The second source is what survives a
+// controller re-install or a conflict-adopt of an existing fleet, where the
+// run history is gone but the data is not.
+func (s *Store) DeploymentFilled(deploymentID string) (bool, error) {
+	if filled, err := s.HasSucceededRun(deploymentID, model.RunInitialFill); err != nil || filled {
+		return filled, err
+	}
+	var vms, unfilled int
+	err := s.db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(CASE WHEN data_state = ? THEN 0 ELSE 1 END), 0)
+		FROM managed_vms WHERE deployment_id = ?`, model.DataFilled, deploymentID).Scan(&vms, &unfilled)
+	if err != nil {
+		return false, err
+	}
+	return vms > 0 && unfilled == 0, nil
+}
+
+// FilledDeploymentIDs returns the set of deployment IDs that count as filled
+// (see DeploymentFilled) — one query to gate the incremental/verify actions
+// across the whole deployment list.
 func (s *Store) FilledDeploymentIDs() (map[string]bool, error) {
-	rows, err := s.db.Query(`SELECT DISTINCT deployment_id FROM runs WHERE type = ? AND status = ?`,
-		model.RunInitialFill, model.RunSucceeded)
+	rows, err := s.db.Query(`SELECT DISTINCT deployment_id FROM runs WHERE type = ? AND status = ?
+		UNION
+		SELECT deployment_id FROM managed_vms GROUP BY deployment_id
+			HAVING SUM(CASE WHEN data_state = ? THEN 0 ELSE 1 END) = 0`,
+		model.RunInitialFill, model.RunSucceeded, model.DataFilled)
 	if err != nil {
 		return nil, err
 	}
