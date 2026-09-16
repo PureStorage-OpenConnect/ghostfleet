@@ -327,10 +327,14 @@ func vmNames(vms []*model.ManagedVM) string {
 	return strings.Join(names, ", ")
 }
 
-// finishFill records the terminal run result and applies the post-fill power
-// action (PRO-5) — on failure too, so the fleet always ends in a known state.
+// finishFill applies the post-fill power action (PRO-5) and then records the
+// terminal run result — on failure too, so the fleet always ends in a known
+// state. The order matters: the run must not read as finished while VMs are
+// still being powered off, or whatever reacts to the terminal status (the UI,
+// a schedule, the next run's boot pass) sees a fleet in flux.
 // vms is the freshly-listed fleet, so per-VM fill errors name the culprits.
 func (o *Orchestrator) finishFill(ctx context.Context, driver hypervisor.Driver, d *model.Deployment, run *model.Run, vms []*model.ManagedVM, done, failed int, bytesWritten int64, dur time.Duration) {
+	o.applyAfterFill(ctx, driver, d, vms)
 	if failed > 0 {
 		var why []string
 		for _, vm := range vms {
@@ -341,10 +345,8 @@ func (o *Orchestrator) finishFill(ctx context.Context, driver hypervisor.Driver,
 		o.store.FinishRun(run.ID, model.RunFailed,
 			mustJSON(map[string]any{"error": fmt.Sprintf("%d/%d VMs failed — %s", failed, len(vms), strings.Join(why, "; ")),
 				"vmsDone": done, "vmsFailed": failed, "bytesWritten": bytesWritten, "durationSec": round1(dur.Seconds())}))
-		o.applyAfterFill(ctx, driver, d, vms)
 		return
 	}
-	o.applyAfterFill(ctx, driver, d, vms)
 	mbAvg := 0.0
 	if dur.Seconds() > 0 {
 		mbAvg = float64(bytesWritten) / (1024 * 1024) / dur.Seconds()
