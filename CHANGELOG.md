@@ -6,6 +6,13 @@ project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- The session cookie carries the `Secure` attribute when the request arrived
+  over TLS or a reverse proxy sent `X-Forwarded-Proto: https`; the new
+  `GHOSTFLEET_SECURE_COOKIES=on|off` forces it either way. On plain HTTP it
+  stays off, as before, so browsers on the trusted network keep working.
+
 ### Fixed
 
 - A failed fill/incremental/verify run was marked finished before the post-run

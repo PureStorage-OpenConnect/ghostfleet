@@ -127,14 +127,7 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "wrong password")
 		return
 	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookie,
-		Value:    s.sessions.create(),
-		Path:     "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   int(sessionLifetime.Seconds()),
-	})
+	s.setSessionCookie(w, r, s.sessions.create(), int(sessionLifetime.Seconds()))
 	writeJSON(w, http.StatusOK, map[string]bool{"authenticated": true})
 }
 
@@ -142,8 +135,40 @@ func (s *server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(sessionCookie); err == nil {
 		s.sessions.revoke(c.Value)
 	}
-	http.SetCookie(w, &http.Cookie{
-		Name: sessionCookie, Value: "", Path: "/", HttpOnly: true, MaxAge: -1,
-	})
+	s.setSessionCookie(w, r, "", -1)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// setSessionCookie writes (maxAge > 0) or clears (maxAge < 0) the session
+// cookie. Login and logout share it so both carry the same attributes.
+func (s *server) setSessionCookie(w http.ResponseWriter, r *http.Request, value string, maxAge int) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookie,
+		Value:    value,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   s.secureCookie(r),
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   maxAge,
+	})
+}
+
+// secureCookie decides the cookie's Secure attribute per Config.SecureCookies.
+// In auto mode a cookie becomes Secure when the request itself came in over
+// TLS or a reverse proxy in front of the controller reports the client
+// connection as https via X-Forwarded-Proto. Trusting that header is safe
+// here: a client forging it can only make its own cookie stricter.
+func (s *server) secureCookie(r *http.Request) bool {
+	switch strings.ToLower(strings.TrimSpace(s.cfg.SecureCookies)) {
+	case "on", "true", "yes", "1":
+		return true
+	case "off", "false", "no", "0":
+		return false
+	}
+	if r.TLS != nil {
+		return true
+	}
+	// Proxies chain the header as "https, http"; the first hop is the client's.
+	proto, _, _ := strings.Cut(r.Header.Get("X-Forwarded-Proto"), ",")
+	return strings.EqualFold(strings.TrimSpace(proto), "https")
 }

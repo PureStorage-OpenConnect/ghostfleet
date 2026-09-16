@@ -38,6 +38,13 @@ type Config struct {
 	// addition to the session cookie. Like Password, configuring any key
 	// turns the API gate on. Empty = no key auth.
 	APIKeys []string
+	// SecureCookies controls the Secure attribute on the session cookie:
+	// "on" sets it always, "off" never, and empty (auto) sets it when the
+	// request arrived over TLS or a reverse proxy said X-Forwarded-Proto:
+	// https. The controller itself speaks plain HTTP (TLS is terminated at a
+	// proxy, if at all), so an unconditional Secure would lock browsers out
+	// on the trusted-network deployment.
+	SecureCookies string
 	// WebDist is the directory holding the built web UI; optional.
 	WebDist string
 	// ImagesDir holds the temp-OS boot artifacts (vmlinuz, initramfs.gz).

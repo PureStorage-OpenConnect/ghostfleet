@@ -24,6 +24,9 @@ vulnerabilities:
 
 - The controller serves plain **HTTP** by design. Terminate TLS at a reverse
   proxy (nginx / Caddy / Traefik) if you expose it beyond a trusted network.
+  The session cookie gets the `Secure` attribute when the proxy forwards
+  `X-Forwarded-Proto: https` (or set `GHOSTFLEET_SECURE_COOKIES=on`); on plain
+  HTTP it is deliberately left off, since browsers would otherwise drop it.
 - The isolated boot network is IPv6-only with static ULA addressing and is meant
   to be a dedicated, non-routed segment.
 - API authentication is optional: protect the controller with

@@ -114,4 +114,6 @@ removed from the hypervisor.
 - **`netboot` restarting** — almost always `GHOSTFLEET_ISOLATED_IF` naming a
   non-existent interface. `ip -br link` lists the real names.
 - **No TLS** — deliberate for a lab tool on a trusted management network; put
-  nginx/Caddy/Traefik in front if you need HTTPS.
+  nginx/Caddy/Traefik in front if you need HTTPS. Have the proxy send
+  `X-Forwarded-Proto: https` so the session cookie is marked `Secure`, or set
+  `GHOSTFLEET_SECURE_COOKIES=on`.
