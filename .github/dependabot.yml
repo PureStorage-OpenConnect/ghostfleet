@@ -20,6 +20,12 @@ updates:
     groups:
       web-dependencies:
         patterns: ["*"]
+    ignore:
+      # TypeScript 7.0 (the Go-native compiler) no longer exports lib/tsc,
+      # which vue-tsc resolves at startup, so `vue-tsc -b` crashes. Skip 7.0.x
+      # only; 7.1 is expected to work with vue-tsc and will be proposed again.
+      - dependency-name: typescript
+        versions: ["7.0.x"]
 
   - package-ecosystem: github-actions
     directory: /
