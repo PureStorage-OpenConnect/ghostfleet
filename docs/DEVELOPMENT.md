@@ -293,7 +293,7 @@ make -C ~/ghostfleet down                                         # keeps volume
 mkdir -p ~/ghostfleet-release && cd ~/ghostfleet-release
 REL=https://github.com/PureStorage-OpenConnect/ghostfleet/releases/latest/download
 curl -fsSL -O $REL/docker-compose.yml -O $REL/env.example -O $REL/preflight.sh
-cp env.example .env && echo GHOSTFLEET_VERSION=v1.0.0 >> .env   # plus GHOSTFLEET_ISOLATED_IF
+cp env.example .env && echo GHOSTFLEET_VERSION=v1.1.0 >> .env   # plus GHOSTFLEET_ISOLATED_IF
 docker compose up -d
 ```
 

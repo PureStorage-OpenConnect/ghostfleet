@@ -6,6 +6,8 @@ project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-09-16
+
 ### Added
 
 - The session cookie carries the `Secure` attribute when the request arrived
@@ -30,6 +32,15 @@ project follows [Semantic Versioning](https://semver.org/).
   the boot watchdog power-cycled the fleet five minutes later. The boot pass now
   goes by the hypervisor's actual power state, and the post-run shutdown clears
   agent liveness so a powered-off VM never shows an online agent.
+
+### Development
+
+- Development guide ([docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)) and a
+  make-based workflow for building, running the dev stack, and deploying a PR
+  or branch to a test host.
+- Dependabot version updates for Go modules, npm, GitHub Actions and base
+  images, plus a CODEOWNERS file; the CI workflow's token is read-only and the
+  Go tests run with `-race`.
 
 ## [1.0.0] — 2026-09-15
 
@@ -76,4 +87,6 @@ version.
   Runs started by a timer are marked in the run history. Existing schedules can
   be edited, paused/resumed and deleted in place.
 
+[Unreleased]: https://github.com/PureStorage-OpenConnect/ghostfleet/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/PureStorage-OpenConnect/ghostfleet/releases/tag/v1.1.0
 [1.0.0]: https://github.com/PureStorage-OpenConnect/ghostfleet/releases/tag/v1.0.0
