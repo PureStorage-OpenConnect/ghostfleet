@@ -12,6 +12,11 @@ project follows [Semantic Versioning](https://semver.org/).
   shutdown had powered the fleet off, so the UI, a schedule, or an immediately
   following run could see a "failed" run with VMs still on. The shutdown now
   completes first, as it already did for successful runs.
+- The web UI's SPA fallback checked for a file by joining the raw request path
+  onto the dist directory, so a dotted path could tell whether a file outside
+  the dist directory exists (different status codes; the file itself was never
+  served). The check now goes through the same root-confined `http.Dir` as the
+  file server.
 - A fill/incremental/verify run started within 30 s of the previous run's
   post-run shutdown booted nothing: the boot pass trusted the still-fresh agent
   heartbeats and skipped the powered-off VMs, leaving the run "running" until
