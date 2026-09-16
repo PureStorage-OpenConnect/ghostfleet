@@ -25,6 +25,9 @@ opening a public issue.
    ```
    CI runs `go vet ./...`, `go test ./...`, `go build ./...` and the web build.
 4. Open a pull request describing what changed and why.
+   Changes to the boot chain (`deploy/`, `cmd/agent/`, Dockerfile base images)
+   are not covered by CI; say whether you booted them on a dev controller VM
+   ([docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)).
 
 ## Licensing of contributions
 

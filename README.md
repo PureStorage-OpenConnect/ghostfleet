@@ -65,6 +65,7 @@ boot chain — is at the top of [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).)
 | Document | Content |
 |---|---|
 | [docs/INSTALL.md](docs/INSTALL.md) | **Deploy a controller from prebuilt images** (docker compose, no source checkout) |
+| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | **Develop and test**: laptop loop with vcsim, dev controller VM built from source, how to test a PR |
 | [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) | Consolidated functional & non-functional requirements |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Component architecture, network design, boot chain, data generation model |
 | [docs/TECH-STACK.md](docs/TECH-STACK.md) | Chosen technology stack, with alternatives and rationale |
@@ -74,13 +75,20 @@ boot chain — is at the top of [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).)
 
 ## Development
 
-Requirements: Go ≥ 1.26, Node ≥ 22 (for the web UI), Docker (for the container stack).
+Requirements: Go ≥ 1.26, Node ≥ 22 (for the web UI), GNU make, Docker (for the
+container stack). `make` alone lists all targets; the everyday ones:
 
 ```sh
 make build        # build controller + agent binaries into ./bin and the web UI
 make test         # run Go tests (and web type-check)
 make run          # run the controller locally on :8080
+make images up    # build the container stack from source and start it (dev VM)
+make deploy REF=pr/6   # check out a branch/tag/PR, rebuild, recreate — for testing
 ```
+
+See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the full development setup:
+running against a local vSphere simulator, building the container stack from
+source on a dev controller VM, and testing pull requests end-to-end.
 
 ## Versioning
 
