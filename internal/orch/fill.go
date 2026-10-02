@@ -70,11 +70,12 @@ func (o *Orchestrator) StartFill(d *model.Deployment, runType string) (*model.Ru
 		o.release(d.ID)
 		return nil, ErrPrecondition{"nothing to fill: deploy the VMs first"}
 	}
-	// Incremental and verify need existing data: a succeeded initial fill —
-	// or an adopted deployment, whose VMs arrived with their data (restored
-	// disks) instead of being filled here.
+	// Incremental and verify need existing data: a succeeded initial fill,
+	// disks the VMs' agents reported as filled at boot (DeploymentFilled
+	// covers both) — or an adopted deployment, whose VMs arrived with their
+	// data (restored disks) instead of being filled here.
 	if runType == model.RunIncremental || runType == model.RunVerify {
-		filled, err := o.store.HasSucceededRun(d.ID, model.RunInitialFill)
+		filled, err := o.store.DeploymentFilled(d.ID)
 		if err != nil {
 			o.release(d.ID)
 			return nil, err
