@@ -92,6 +92,38 @@ type DiscoveryReport struct {
 	Disks []DiscoveryDisk `json:"disks"`
 }
 
+// DataState summarises a disk inspection into a ManagedVM data state
+// (model.Data*): filled when every disk carries GhostFleet data (an identity
+// or run marker), empty when none does, partial in between, unknown when
+// nothing was inspected. It also returns the run ID recorded on the disks
+// (the first marked disk's run marker) and whether every marked disk carries
+// a checksum manifest, i.e. whether a verify run is possible.
+func DataState(disks []DiscoveryDisk) (state, runID string, manifest bool) {
+	if len(disks) == 0 {
+		return model.DataUnknown, "", false
+	}
+	marked := 0
+	manifest = true
+	for _, d := range disks {
+		if d.Identity == nil && d.RunID == "" {
+			continue
+		}
+		marked++
+		if runID == "" {
+			runID = d.RunID
+		}
+		manifest = manifest && d.Manifest
+	}
+	switch marked {
+	case 0:
+		return model.DataEmpty, "", false
+	case len(disks):
+		return model.DataFilled, runID, manifest
+	default:
+		return model.DataPartial, runID, manifest
+	}
+}
+
 // GhostIdentity returns the identity marker of the first GhostFleet-marked
 // disk, or nil — a discovered VM's identity for adoption decisions.
 func (r *DiscoveryReport) GhostIdentity() *IdentityMarker {

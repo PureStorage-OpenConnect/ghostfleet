@@ -107,6 +107,10 @@ export interface ManagedVM {
   mac?: string
   agentStatus: string
   agentSeenAt?: string
+  dataState?: string // '' (unknown) | empty | partial | filled — what the disks hold
+  dataRunId?: string
+  dataManifest?: boolean
+  dataSeenAt?: string
   fillRunId?: string
   fillStatus?: string
   bytesWritten: number

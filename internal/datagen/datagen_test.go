@@ -97,3 +97,33 @@ func TestFractionalCompressRounds(t *testing.T) {
 		t.Errorf("changePercent = %v, want 7.5", wo.ChangePercent)
 	}
 }
+
+func TestDataState(t *testing.T) {
+	id := &IdentityMarker{DeploymentID: "d1", VMName: "ghost-1"}
+	marked := DiscoveryDisk{Device: "sda", Identity: id, RunID: "run-1", Manifest: true}
+	markedNoManifest := DiscoveryDisk{Device: "sdb", Identity: id, RunID: "run-1"}
+	runOnly := DiscoveryDisk{Device: "sdc", RunID: "run-0"} // pre-identity agent
+	blank := DiscoveryDisk{Device: "sdd", SizeGiB: 100}
+
+	cases := []struct {
+		name     string
+		disks    []DiscoveryDisk
+		state    string
+		runID    string
+		manifest bool
+	}{
+		{"nothing inspected", nil, model.DataUnknown, "", false},
+		{"all marked", []DiscoveryDisk{marked, marked}, model.DataFilled, "run-1", true},
+		{"run marker counts", []DiscoveryDisk{runOnly}, model.DataFilled, "run-0", false},
+		{"manifest needs every disk", []DiscoveryDisk{marked, markedNoManifest}, model.DataFilled, "run-1", false},
+		{"all blank", []DiscoveryDisk{blank, blank}, model.DataEmpty, "", false},
+		{"mixed", []DiscoveryDisk{marked, blank}, model.DataPartial, "run-1", true},
+	}
+	for _, c := range cases {
+		state, runID, manifest := DataState(c.disks)
+		if state != c.state || runID != c.runID || manifest != c.manifest {
+			t.Errorf("%s: got (%q, %q, %v), want (%q, %q, %v)",
+				c.name, state, runID, manifest, c.state, c.runID, c.manifest)
+		}
+	}
+}
