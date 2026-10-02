@@ -806,3 +806,104 @@ func TestScheduleCRUD(t *testing.T) {
 		t.Fatalf("get deleted schedule: status %d, want 404", resp.StatusCode)
 	}
 }
+
+// TestAgentRegisterReportsDataState: a deployment this controller never
+// filled (fresh DB, or existing VMs adopted on deploy) counts as filled once
+// every VM's agent has registered with a disk inspection showing GhostFleet
+// data — the power-on recovery path. A blank disk anywhere keeps it unfilled.
+func TestAgentRegisterReportsDataState(t *testing.T) {
+	srv, client, _ := testServerWithDriver(t, "")
+	anon := &http.Client{}
+	did, _, _ := deployFleet(t, srv, client, "recover")
+	_, vms := doJSONList(t, client, srv.URL+"/api/v1/deployments/"+did+"/vms")
+	if len(vms) != 4 {
+		t.Fatalf("vms = %d, want 4", len(vms))
+	}
+
+	tokens := make([]string, len(vms))
+	for i, vm := range vms {
+		tokens[i] = bootToken(t, srv, vm["mac"].(string))
+	}
+	identity := map[string]any{"deploymentId": "old-controller", "deploymentName": "recover", "vmName": "x"}
+	filledDisk := func(dev string) map[string]any {
+		return map[string]any{"device": dev, "sizeGiB": 100, "filesystem": "xfs", "identity": identity,
+			"runId": "run-old", "runBytes": 1 << 30, "manifest": true, "fileCount": 50}
+	}
+	blankDisk := func(dev string) map[string]any { return map[string]any{"device": dev, "sizeGiB": 100} }
+
+	// Three VMs report filled disks, the fourth a half-blank pair: not filled.
+	for i, tok := range tokens {
+		disks := []map[string]any{filledDisk("sda"), filledDisk("sdb")}
+		if i == 3 {
+			disks = []map[string]any{filledDisk("sda"), blankDisk("sdb")}
+		}
+		resp, reg := doJSON(t, anon, "POST", srv.URL+"/agent/v1/register", map[string]any{"token": tok, "disks": disks})
+		if resp.StatusCode != 200 || reg["action"] != "idle" {
+			t.Fatalf("register %d: %d %v", i, resp.StatusCode, reg)
+		}
+	}
+	_, vms = doJSONList(t, client, srv.URL+"/api/v1/deployments/"+did+"/vms")
+	states := map[string]int{}
+	for _, vm := range vms {
+		states[vm["dataState"].(string)]++
+	}
+	if states["filled"] != 3 || states["partial"] != 1 {
+		t.Fatalf("data states = %v, want 3 filled + 1 partial", states)
+	}
+	_, dd := doJSON(t, client, "GET", srv.URL+"/api/v1/deployments/"+did, nil)
+	if dd["filled"] != false {
+		t.Fatalf("filled with a partial VM should be false, got %v", dd["filled"])
+	}
+
+	// The fourth VM boots again (disks now filled): the deployment is filled,
+	// on both the single-deployment and the list endpoint, and an incremental
+	// is no longer refused as "initial fill first".
+	resp, _ := doJSON(t, anon, "POST", srv.URL+"/agent/v1/register",
+		map[string]any{"token": tokens[3], "disks": []map[string]any{filledDisk("sda"), filledDisk("sdb")}})
+	if resp.StatusCode != 200 {
+		t.Fatalf("re-register: %d", resp.StatusCode)
+	}
+	_, dd = doJSON(t, client, "GET", srv.URL+"/api/v1/deployments/"+did, nil)
+	if dd["filled"] != true {
+		t.Fatalf("filled after every VM reported data should be true, got %v", dd["filled"])
+	}
+	_, list := doJSONList(t, client, srv.URL+"/api/v1/deployments")
+	for _, d := range list {
+		if d["id"] == did && d["filled"] != true {
+			t.Fatalf("list: filled = %v, want true", d["filled"])
+		}
+	}
+	resp, body := doJSON(t, client, "POST", srv.URL+"/api/v1/deployments/"+did+"/fill",
+		map[string]any{"type": "verify"})
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("verify on a reported-filled fleet: %d %v", resp.StatusCode, body)
+	}
+
+	// A heartbeat carries no inspection and must not disturb the state; a
+	// register without one (older agent) leaves it alone too.
+	doJSON(t, anon, "POST", srv.URL+"/agent/v1/heartbeat", map[string]string{"token": tokens[0]})
+	doJSON(t, anon, "POST", srv.URL+"/agent/v1/register", map[string]string{"token": tokens[0]})
+	_, dd = doJSON(t, client, "GET", srv.URL+"/api/v1/deployments/"+did, nil)
+	if dd["filled"] != true {
+		t.Fatalf("filled flipped by a report-less register/heartbeat: %v", dd["filled"])
+	}
+}
+
+// bootToken fetches a managed VM's boot script and returns the token in it.
+func bootToken(t *testing.T, srv *httptest.Server, mac string) string {
+	t.Helper()
+	res, err := http.Get(srv.URL + "/boot/script.ipxe?mac=" + mac)
+	if err != nil || res.StatusCode != 200 {
+		t.Fatalf("boot script for %s: %v %d", mac, err, res.StatusCode)
+	}
+	body := new(bytes.Buffer)
+	body.ReadFrom(res.Body)
+	res.Body.Close()
+	for _, f := range strings.Fields(body.String()) {
+		if strings.HasPrefix(f, "ghostfleet.token=") {
+			return strings.TrimPrefix(f, "ghostfleet.token=")
+		}
+	}
+	t.Fatalf("no boot token in script for %s: %s", mac, body.String())
+	return ""
+}

@@ -58,7 +58,7 @@ func (o *Orchestrator) AdoptRebind(ctx context.Context, dv *model.DiscoveredVM) 
 	if dv.Status == model.DiscoveredAdopted {
 		return nil, ErrPrecondition{"this VM is already adopted"}
 	}
-	_, id, err := discoveredIdentity(dv)
+	report, id, err := discoveredIdentity(dv)
 	if err != nil {
 		return nil, err
 	}
@@ -101,6 +101,9 @@ func (o *Orchestrator) AdoptRebind(ctx context.Context, dv *model.DiscoveredVM) 
 	if err := o.store.RebindManagedVM(vm.ID, dv.MAC, hv.Ref); err != nil {
 		return nil, err
 	}
+	if err := o.setDataStateFromReport(vm.ID, report); err != nil {
+		return nil, err
+	}
 	if err := o.store.SetDiscoveredStatus(dv.ID, model.DiscoveredAdopted); err != nil {
 		return nil, err
 	}
@@ -122,7 +125,7 @@ func (o *Orchestrator) AdoptNew(ctx context.Context, dv *model.DiscoveredVM, nam
 	if dv.Status == model.DiscoveredAdopted {
 		return nil, ErrPrecondition{"this VM is already adopted"}
 	}
-	_, id, err := discoveredIdentity(dv)
+	report, id, err := discoveredIdentity(dv)
 	if err != nil {
 		return nil, err
 	}
@@ -204,10 +207,24 @@ func (o *Orchestrator) AdoptNew(ctx context.Context, dv *model.DiscoveredVM, nam
 	if err := o.store.AddManagedVM(vm); err != nil {
 		return nil, err
 	}
+	if err := o.setDataStateFromReport(vm.ID, report); err != nil {
+		return nil, err
+	}
+	if vm, err = o.store.GetManagedVM(vm.ID); err != nil {
+		return nil, err
+	}
 	if err := o.store.SetDiscoveredStatus(dv.ID, model.DiscoveredAdopted); err != nil {
 		return nil, err
 	}
 	slog.Info("adopted discovered VM (new deployment)",
 		"deployment", d.Name, "vm", vm.Name, "mac", dv.MAC, "ref", hv.Ref)
 	return &AdoptResult{Deployment: d, VM: vm}, nil
+}
+
+// setDataStateFromReport seeds the adopted VM's on-disk data state from the
+// discovery inspection that made it adoptable, so it reads as filled right
+// away (its agent re-reports on the reboot into managed life anyway).
+func (o *Orchestrator) setDataStateFromReport(vmID string, report *datagen.DiscoveryReport) error {
+	state, runID, manifest := datagen.DataState(report.Disks)
+	return o.store.SetVMDataState(vmID, state, runID, manifest)
 }

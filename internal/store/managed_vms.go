@@ -11,6 +11,7 @@ import (
 
 const managedVMCols = `id, deployment_id, name, ref, disk_count, disk_size_gib,
 	mac, boot_token, agent_status, agent_seen_at,
+	data_state, data_run_id, data_manifest, data_seen_at,
 	fill_run_id, fill_status, bytes_written, bytes_total, mbps, fill_error, created_at`
 
 // AddManagedVM records a VM the orchestrator created on the hypervisor. A
@@ -95,13 +96,32 @@ func (s *Store) GetManagedVMByName(deploymentID, name string) (*model.ManagedVM,
 	return scanManagedVM(row)
 }
 
+// SetVMDataState records what the VM's disks hold (model.Data*), as reported
+// by its agent or taken from a discovery report at adoption.
+func (s *Store) SetVMDataState(vmID, state, runID string, manifest bool) error {
+	res, err := s.db.Exec(`UPDATE managed_vms
+		SET data_state = ?, data_run_id = ?, data_manifest = ?, data_seen_at = ? WHERE id = ?`,
+		state, runID, manifest, now().Format(timeFmt), vmID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // RebindManagedVM re-points an existing VM record at a different hypervisor
 // VM — restore-in-place adoption: the restored copy takes the original's
 // place in its deployment, under its new MAC and driver reference. Agent
-// liveness is reset (the restored VM has never registered as this record).
+// liveness and the on-disk data state are reset (the restored VM has never
+// registered as this record; adoption re-sets the data state from its
+// discovery report).
 func (s *Store) RebindManagedVM(id, mac, ref string) error {
 	res, err := s.db.Exec(`UPDATE managed_vms
-		SET mac = ?, ref = ?, agent_status = ?, agent_seen_at = NULL WHERE id = ?`,
+		SET mac = ?, ref = ?, agent_status = ?, agent_seen_at = NULL,
+		    data_state = '', data_run_id = '', data_manifest = 0, data_seen_at = NULL
+		WHERE id = ?`,
 		strings.ToLower(mac), ref, model.AgentNone, id)
 	if err != nil {
 		return err
@@ -140,10 +160,11 @@ func (s *Store) ListManagedVMs(deploymentID string) ([]*model.ManagedVM, error) 
 
 func scanManagedVM(r rowScanner) (*model.ManagedVM, error) {
 	var v model.ManagedVM
-	var seen sql.NullString
+	var seen, dataSeen sql.NullString
 	var created string
 	err := r.Scan(&v.ID, &v.DeploymentID, &v.Name, &v.Ref, &v.DiskCount, &v.DiskSizeGiB,
 		&v.MAC, &v.BootToken, &v.AgentStatus, &seen,
+		&v.DataState, &v.DataRunID, &v.DataManifest, &dataSeen,
 		&v.FillRunID, &v.FillStatus, &v.BytesWritten, &v.BytesTotal, &v.MBps, &v.FillError, &created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -154,6 +175,10 @@ func scanManagedVM(r rowScanner) (*model.ManagedVM, error) {
 	if seen.Valid {
 		t, _ := time.Parse(timeFmt, seen.String)
 		v.AgentSeenAt = &t
+	}
+	if dataSeen.Valid {
+		t, _ := time.Parse(timeFmt, dataSeen.String)
+		v.DataSeenAt = &t
 	}
 	v.CreatedAt, _ = time.Parse(timeFmt, created)
 	return &v, nil
@@ -217,7 +242,10 @@ func (s *Store) CancelUnfinishedFills(runID string) error {
 }
 
 // ReportFillProgress records a progress sample from an agent. done/failed
-// set the terminal status; otherwise the VM is marked working.
+// set the terminal status; otherwise the VM is marked working. A completed
+// fill or incremental also settles the VM's on-disk data state: the agent
+// has just written the data (and its markers and manifest), so the disks
+// are known filled without waiting for the next boot-time inspection.
 func (s *Store) ReportFillProgress(vmID string, bytesWritten int64, mbps float64, done bool, errMsg string) error {
 	status := model.FillWorking
 	if errMsg != "" {
@@ -225,12 +253,20 @@ func (s *Store) ReportFillProgress(vmID string, bytesWritten int64, mbps float64
 	} else if done {
 		status = model.FillDone
 	}
+	ts := now().Format(timeFmt)
 	_, err := s.db.Exec(`UPDATE managed_vms
 		SET bytes_written = ?, mbps = ?, fill_status = ?, fill_error = ?,
 		    agent_status = ?, agent_seen_at = ?, fill_updated_at = ?
 		WHERE id = ?`,
 		bytesWritten, mbps, status, errMsg,
-		model.AgentOnline, now().Format(timeFmt), now().Format(timeFmt), vmID)
+		model.AgentOnline, ts, ts, vmID)
+	if err != nil || status != model.FillDone {
+		return err
+	}
+	_, err = s.db.Exec(`UPDATE managed_vms
+		SET data_state = ?, data_run_id = fill_run_id, data_manifest = 1, data_seen_at = ?
+		WHERE id = ? AND fill_run_id IN (SELECT id FROM runs WHERE type IN (?, ?))`,
+		model.DataFilled, ts, vmID, model.RunInitialFill, model.RunIncremental)
 	return err
 }
 

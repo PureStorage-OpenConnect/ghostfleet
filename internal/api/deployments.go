@@ -134,7 +134,7 @@ func (s *server) getDeployment(w http.ResponseWriter, r *http.Request) {
 		writeStoreError(w, err)
 		return
 	}
-	if filled, err := s.cfg.Store.HasSucceededRun(d.ID, model.RunInitialFill); err == nil {
+	if filled, err := s.cfg.Store.DeploymentFilled(d.ID); err == nil {
 		d.Filled = filled
 	}
 	d.Running = s.cfg.Orch.IsActive(d.ID)

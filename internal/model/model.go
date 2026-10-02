@@ -219,9 +219,10 @@ type Deployment struct {
 	// fills, incrementals, verify, power and teardown are.
 	Origin string `json:"origin,omitempty"`
 
-	// Read-time flags, not persisted: set by the API from run history and the
-	// orchestrator's live job state. Filled gates the incremental action;
-	// Running drives the cancel affordance.
+	// Read-time flags, not persisted: set by the API from run history, the
+	// VMs' reported on-disk data state and the orchestrator's live job state.
+	// Filled gates the incremental/verify actions; Running drives the cancel
+	// affordance.
 	Filled  bool `json:"filled"`
 	Running bool `json:"running"`
 }
@@ -278,6 +279,17 @@ type ManagedVM struct {
 	AgentStatus string     `json:"agentStatus"` // none | online
 	AgentSeenAt *time.Time `json:"agentSeenAt,omitempty"`
 
+	// On-disk data state, as last learned from the agent's boot-time disk
+	// inspection (sent with register), a completed fill/incremental, or the
+	// discovery report at adoption. It lets a deployment count as filled by
+	// what is actually on the disks rather than only by this controller's run
+	// history — after a controller re-install, powering the fleet on is enough
+	// to re-learn that it is filled (no re-fill needed).
+	DataState    string     `json:"dataState,omitempty"` // "" (unknown) | empty | partial | filled
+	DataRunID    string     `json:"dataRunId,omitempty"` // last completed run per the disks' run markers
+	DataManifest bool       `json:"dataManifest"`        // every data disk carries a checksum manifest (verify possible)
+	DataSeenAt   *time.Time `json:"dataSeenAt,omitempty"`
+
 	// Fill/incremental progress for the active run (FillRunID).
 	FillRunID    string  `json:"fillRunId,omitempty"`
 	FillStatus   string  `json:"fillStatus,omitempty"` // pending | working | done | failed
@@ -293,6 +305,14 @@ type ManagedVM struct {
 const (
 	AgentNone   = "none"   // never registered
 	AgentOnline = "online" // registered; staleness derived from AgentSeenAt
+)
+
+// Data states for ManagedVM.DataState.
+const (
+	DataUnknown = ""        // never reported
+	DataEmpty   = "empty"   // no disk carries GhostFleet data
+	DataPartial = "partial" // some disks do, some don't
+	DataFilled  = "filled"  // every data disk carries GhostFleet data
 )
 
 // Per-VM fill statuses for ManagedVM.FillStatus.
