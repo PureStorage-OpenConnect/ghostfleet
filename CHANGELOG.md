@@ -6,6 +6,8 @@ project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-10-14
+
 ### Added
 
 - Agents report what their data disks hold when they register after boot
@@ -99,6 +101,7 @@ version.
   Runs started by a timer are marked in the run history. Existing schedules can
   be edited, paused/resumed and deleted in place.
 
-[Unreleased]: https://github.com/PureStorage-OpenConnect/ghostfleet/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/PureStorage-OpenConnect/ghostfleet/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/PureStorage-OpenConnect/ghostfleet/releases/tag/v1.2.0
 [1.1.0]: https://github.com/PureStorage-OpenConnect/ghostfleet/releases/tag/v1.1.0
 [1.0.0]: https://github.com/PureStorage-OpenConnect/ghostfleet/releases/tag/v1.0.0
