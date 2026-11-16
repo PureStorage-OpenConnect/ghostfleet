@@ -3,8 +3,8 @@ import { computed } from 'vue'
 
 // A dependency-free inline-SVG line chart for a throughput series.
 const props = withDefaults(
-  defineProps<{ values: number[]; width?: number; height?: number; unit?: string }>(),
-  { width: 220, height: 40, unit: 'MB/s' },
+  defineProps<{ values: number[]; width?: number; height?: number; unit?: string; live?: boolean }>(),
+  { width: 220, height: 40, unit: 'MB/s', live: false },
 )
 
 const max = computed(() => Math.max(1, ...props.values))
@@ -39,7 +39,8 @@ const latest = computed(() => props.values[props.values.length - 1] ?? 0)
       />
     </svg>
     <span class="font-mono text-xs whitespace-nowrap text-slate-500">
-      {{ latest.toFixed(0) }} {{ unit }} · peak {{ peak.toFixed(0) }}
+      <template v-if="live">{{ latest.toFixed(0) }} {{ unit }} · </template>peak {{ peak.toFixed(0) }}
+      <template v-if="!live">{{ unit }}</template>
     </span>
   </div>
 </template>

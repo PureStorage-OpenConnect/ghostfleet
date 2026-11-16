@@ -19,6 +19,7 @@ import SpecForm from '../components/SpecForm.vue'
 import SearchableSelect from '../components/SearchableSelect.vue'
 import MultiSelect from '../components/MultiSelect.vue'
 import Sparkline from '../components/Sparkline.vue'
+import { throughputSeries } from '../throughput'
 
 const deployments = ref<Deployment[]>([])
 const profiles = ref<Profile[]>([])
@@ -156,7 +157,7 @@ async function loadSamples(deploymentId: string, runs: Run[]) {
     if (run.type !== 'initial-fill' && run.type !== 'incremental' && run.type !== 'verify') continue
     try {
       const s = await api.listRunSamples(deploymentId, run.id)
-      runSamples.value = { ...runSamples.value, [run.id]: s.map((p) => p.mbps) }
+      runSamples.value = { ...runSamples.value, [run.id]: throughputSeries(s) }
     } catch {
       /* ignore */
     }
@@ -1662,6 +1663,7 @@ const labelClass = 'block text-xs font-medium text-slate-500 mb-1'
                         <Sparkline
                           v-if="runSamples[run.id] && runSamples[run.id].length > 1"
                           :values="runSamples[run.id]"
+                          :live="run.status === 'running'"
                         />
                       </td>
                       <td
