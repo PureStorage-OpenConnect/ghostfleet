@@ -6,12 +6,19 @@ project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.2.1] — 2026-11-16
+
 ### Fixed
 
 - The throughput sparkline of short runs no longer stays flat at "peak 0"
   next to a real average. It is now derived from the bytes written over time
   instead of point-in-time rate snapshots that missed most of a short write,
   and finished runs show their peak instead of an always-zero current rate.
+
+### Changed
+
+- Dependency updates: govmomi 0.56.2, the SQLite driver 1.61.0, and current
+  patch releases of Vue, Vue Router, Vite and Tailwind CSS in the web UI.
 
 ## [1.2.0] — 2026-10-14
 
@@ -108,7 +115,8 @@ version.
   Runs started by a timer are marked in the run history. Existing schedules can
   be edited, paused/resumed and deleted in place.
 
-[Unreleased]: https://github.com/PureStorage-OpenConnect/ghostfleet/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/PureStorage-OpenConnect/ghostfleet/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/PureStorage-OpenConnect/ghostfleet/releases/tag/v1.2.1
 [1.2.0]: https://github.com/PureStorage-OpenConnect/ghostfleet/releases/tag/v1.2.0
 [1.1.0]: https://github.com/PureStorage-OpenConnect/ghostfleet/releases/tag/v1.1.0
 [1.0.0]: https://github.com/PureStorage-OpenConnect/ghostfleet/releases/tag/v1.0.0
