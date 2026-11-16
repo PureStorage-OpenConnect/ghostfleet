@@ -6,6 +6,13 @@ project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- The throughput sparkline of short runs no longer stays flat at "peak 0"
+  next to a real average. It is now derived from the bytes written over time
+  instead of point-in-time rate snapshots that missed most of a short write,
+  and finished runs show their peak instead of an always-zero current rate.
+
 ## [1.2.0] — 2026-10-14
 
 ### Added
